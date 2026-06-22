@@ -98,37 +98,37 @@ const ROLE_COLORS = { admin: ACCENT, editor: ACCENT2, sales: GREEN };
 // ═══════════════════════════════════════════════════════════════
 const DEFAULT_SCENARIOS = [
   {
-    id: 'new-certified-ippbx', name: 'New SIP Trunk + Certified IP-PBX',
+    id: 'new-certified-ippbx', scenarioType: 'certified', name: 'New SIP Trunk + Certified IP-PBX',
     desc: 'Standard deployment with a pre-certified IP-PBX (e.g. Avaya, Cisco, Yeastar). Lowest integration risk.',
     icon: CheckCircle, color: GREEN, colorSoft: GREEN_SOFT,
     items: ['sipTrunk.setupFee', 'sipTrunk.monthlyAccess', 'channels.perChannelMonthly', 'numbers.didLocal', 'numbers.numberActivation', 'integration.certifiedPBXSetup', 'integration.sipTestingCertified', 'professionalServices.siteSurvey', 'professionalServices.installationService', 'professionalServices.projectManagement'],
   },
   {
-    id: 'new-noncertified-ippbx', name: 'New SIP Trunk + Non-Certified IP-PBX',
+    id: 'new-noncertified-ippbx', scenarioType: 'certified', name: 'New SIP Trunk + Non-Certified IP-PBX',
     desc: 'Deployment with an untested IP-PBX. Requires full interoperability testing and potential customisation.',
     icon: AlertTriangle, color: AMBER, colorSoft: '#FFFBEB',
     items: ['sipTrunk.setupFee', 'sipTrunk.monthlyAccess', 'channels.perChannelMonthly', 'numbers.didLocal', 'numbers.numberActivation', 'integration.nonCertifiedPBXSetup', 'integration.sipTestingNonCertified', 'integration.interoperabilityTest', 'professionalServices.siteSurvey', 'professionalServices.installationService', 'professionalServices.projectManagement', 'professionalServices.networkAssessment'],
   },
   {
-    id: 'legacy-pbx-mediagw', name: 'Legacy PBX + Media Gateway',
+    id: 'legacy-pbx-mediagw', scenarioType: 'certified', name: 'Legacy PBX + Media Gateway',
     desc: 'Connecting a traditional TDM/E1 PBX via a media gateway. Higher setup complexity, gateway rental applies.',
     icon: Server, color: ACCENT2, colorSoft: '#F5F3FF',
     items: ['sipTrunk.setupFee', 'sipTrunk.monthlyAccess', 'channels.perChannelMonthly', 'numbers.didLocal', 'numbers.numberActivation', 'integration.legacyPBXSetup', 'integration.mediaGatewaySetup', 'integration.mediaGatewayRental', 'integration.sipTestingNonCertified', 'integration.interoperabilityTest', 'professionalServices.siteSurvey', 'professionalServices.installationService', 'professionalServices.projectManagement', 'professionalServices.networkAssessment'],
   },
   {
-    id: 'redundant-sip', name: 'SIP Trunk with Redundant Link',
+    id: 'redundant-sip', scenarioType: 'managed', name: 'SIP Trunk with Redundant Link',
     desc: 'Primary + secondary SIP trunk for high availability. Includes redundant link setup and monthly charges.',
     icon: Shield, color: ACCENT, colorSoft: ACCENT_SOFT,
     items: ['sipTrunk.setupFee', 'sipTrunk.monthlyAccess', 'sipTrunk.redundantLinkSetup', 'sipTrunk.redundantLinkMonthly', 'channels.perChannelMonthly', 'numbers.didLocal', 'numbers.numberActivation', 'integration.certifiedPBXSetup', 'integration.sipTestingCertified', 'professionalServices.siteSurvey', 'professionalServices.installationService', 'professionalServices.projectManagement'],
   },
   {
-    id: 'cloud-pbx-partner', name: 'Partner Cloud PBX + SIP Trunk',
+    id: 'cloud-pbx-partner', scenarioType: 'managed', name: 'Partner Cloud PBX + SIP Trunk',
     desc: "Utilising a partner's cloud PBX platform (white-label UCaaS). Per-user seat model with SIP trunk backhaul.",
     icon: Globe, color: '#0891B2', colorSoft: '#ECFEFF',
     items: ['sipTrunk.setupFee', 'sipTrunk.monthlyAccess', 'channels.perChannelMonthly', 'numbers.didLocal', 'numbers.numberActivation', 'cloudPBX.cloudPBXPerUser', 'cloudPBX.cloudPBXSetup', 'cloudPBX.cloudPBXIntegration', 'cloudPBX.cloudPBXTraining', 'professionalServices.projectManagement', 'professionalServices.trainingPerSession'],
   },
   {
-    id: 'full-stack', name: 'Full Stack: Redundant SIP + Cloud PBX + Legacy GW',
+    id: 'full-stack', scenarioType: 'addon', name: 'Full Stack: Redundant SIP + Cloud PBX + Legacy GW',
     desc: 'Maximum complexity: redundant SIP, cloud PBX for new sites, media gateway for legacy PBX. Full migration scenario.',
     icon: Phone, color: INK, colorSoft: '#F1F5F9',
     items: ['sipTrunk.setupFee', 'sipTrunk.monthlyAccess', 'sipTrunk.redundantLinkSetup', 'sipTrunk.redundantLinkMonthly', 'channels.perChannelMonthly', 'numbers.didLocal', 'numbers.didTollFree', 'numbers.numberActivation', 'numbers.numberPorting', 'integration.legacyPBXSetup', 'integration.mediaGatewaySetup', 'integration.mediaGatewayRental', 'integration.sipTestingNonCertified', 'integration.interoperabilityTest', 'cloudPBX.cloudPBXPerUser', 'cloudPBX.cloudPBXSetup', 'cloudPBX.cloudPBXIntegration', 'cloudPBX.cloudPBXTraining', 'professionalServices.siteSurvey', 'professionalServices.networkAssessment', 'professionalServices.installationService', 'professionalServices.projectManagement', 'professionalServices.trainingPerSession', 'professionalServices.supportPremium'],
@@ -147,15 +147,25 @@ const SCENARIO_COLOR_OPTIONS = [
   { name: 'Dark', color: INK, colorSoft: '#F1F5F9' },
 ];
 
+const SCENARIO_SECTION_OPTIONS = [
+  { id: 'certified', label: 'Certified IP-PBX / SBC / MGW', desc: 'Certified customer-owned IP-PBX, SBC or MGW deployment scenarios.' },
+  { id: 'managed', label: 'Managed IP-PBX / SBC / MGW', desc: 'YES-managed voice platform, managed SBC, managed MGW and recurring support scenarios.' },
+  { id: 'addon', label: 'Add-On to Existing Scenario', desc: 'Optional add-ons that can be attached to a selected certified or managed scenario.' },
+];
+
+const SCENARIO_SECTION_LABELS = SCENARIO_SECTION_OPTIONS.reduce((acc, section) => ({ ...acc, [section.id]: section.label }), {});
+
 const normaliseScenario = (scenario, fallback = {}) => {
   const fallbackIconKey = fallback.iconKey || Object.keys(SCENARIO_ICON_MAP).find(k => SCENARIO_ICON_MAP[k] === fallback.icon) || 'CheckCircle';
   return {
     ...fallback,
     ...scenario,
     iconKey: scenario.iconKey || Object.keys(SCENARIO_ICON_MAP).find(k => SCENARIO_ICON_MAP[k] === scenario.icon) || fallbackIconKey,
+    scenarioType: scenario.scenarioType || fallback.scenarioType || 'certified',
     color: scenario.color || fallback.color || ACCENT,
     colorSoft: scenario.colorSoft || fallback.colorSoft || ACCENT_SOFT,
     items: Array.isArray(scenario.items) ? scenario.items : [],
+    itemSettings: scenario.itemSettings || fallback.itemSettings || {},
   };
 };
 
@@ -225,7 +235,7 @@ export default function SIPPricingPlaybook() {
     } catch (e) { return DEFAULT_SCENARIOS.map(sc => normaliseScenario(sc)); }
   });
   const blankScenario = {
-    id: '', name: '', desc: '', iconKey: 'CheckCircle', color: GREEN, colorSoft: GREEN_SOFT, items: []
+    id: '', name: '', desc: '', scenarioType: 'certified', iconKey: 'CheckCircle', color: GREEN, colorSoft: GREEN_SOFT, items: [], itemSettings: {}
   };
   const [scenarioForm, setScenarioForm] = useState(blankScenario);
   const [editingScenarioId, setEditingScenarioId] = useState(null);
@@ -240,6 +250,7 @@ export default function SIPPricingPlaybook() {
   // ─── CALCULATOR STATE ───────────────────────────────────
   const [activeTab, setActiveTab] = useState('sales');
   const [selectedScenario, setSelectedScenario] = useState(null);
+  const [selectedAddOns, setSelectedAddOns] = useState([]);
   const [customItems, setCustomItems] = useState({});
   const [qtyInputs, setQtyInputs] = useState({});
   const [marginPct, setMarginPct] = useState(35);
@@ -258,6 +269,7 @@ export default function SIPPricingPlaybook() {
   const [savedNotice, setSavedNotice] = useState(false);
   const [confirmAction, setConfirmAction] = useState(null);
   const importRef = useRef(null);
+  const scenarioImportRef = useRef(null);
 
   // ─── EFFECTS ────────────────────────────────────────────
   useEffect(() => {
@@ -313,7 +325,7 @@ export default function SIPPricingPlaybook() {
 
   const startAddScenario = () => {
     const firstColor = SCENARIO_COLOR_OPTIONS[0];
-    setScenarioForm({ ...blankScenario, id: 'scenario-' + Date.now().toString(36), color: firstColor.color, colorSoft: firstColor.colorSoft, items: [] });
+    setScenarioForm({ ...blankScenario, id: 'scenario-' + Date.now().toString(36), scenarioType: 'certified', color: firstColor.color, colorSoft: firstColor.colorSoft, items: [], itemSettings: {} });
     setEditingScenarioId(null);
     setShowScenarioForm(true);
   };
@@ -327,17 +339,81 @@ export default function SIPPricingPlaybook() {
   const saveScenario = () => {
     if (!scenarioForm.name.trim()) return;
     const safeId = (scenarioForm.id || scenarioForm.name).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || ('scenario-' + Date.now().toString(36));
-    const scenarioToSave = normaliseScenario({ ...scenarioForm, id: safeId, name: scenarioForm.name.trim(), desc: scenarioForm.desc.trim(), items: scenarioForm.items || [] });
+    const scenarioToSave = normaliseScenario({ ...scenarioForm, id: safeId, name: scenarioForm.name.trim(), desc: scenarioForm.desc.trim(), scenarioType: scenarioForm.scenarioType || 'certified', items: scenarioForm.items || [], itemSettings: scenarioForm.itemSettings || {} });
     setScenarios(prev => editingScenarioId ? prev.map(sc => sc.id === editingScenarioId ? scenarioToSave : sc) : [...prev, scenarioToSave]);
+
+    // Keep Sales Calculator in sync immediately after editing or renaming a scenario ID.
+    if (editingScenarioId && selectedScenario === editingScenarioId) {
+      setSelectedScenario(scenarioToSave.id);
+    }
+
     setShowScenarioForm(false);
     setEditingScenarioId(null);
     setScenarioForm(blankScenario);
     showSaved();
   };
 
+  const cloneScenario = (scenario) => {
+    const cloned = normaliseScenario({
+      ...scenario,
+      id: 'scenario-' + Date.now().toString(36),
+      name: scenario.name + ' Copy',
+      items: [...(scenario.items || [])],
+      itemSettings: { ...(scenario.itemSettings || {}) },
+    });
+    setScenarios(prev => [...prev, cloned]);
+    showSaved();
+  };
+
+  const moveScenario = (scenarioId, direction) => {
+    setScenarios(prev => {
+      const index = prev.findIndex(sc => sc.id === scenarioId);
+      const targetIndex = index + direction;
+      if (index < 0 || targetIndex < 0 || targetIndex >= prev.length) return prev;
+      const updated = [...prev];
+      [updated[index], updated[targetIndex]] = [updated[targetIndex], updated[index]];
+      return updated;
+    });
+    showSaved();
+  };
+
+  const exportScenarios = () => {
+    const data = JSON.stringify(scenarios.map(prepareScenarioForStorage), null, 2);
+    const blob = new Blob([data], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'sip-scenarios-' + new Date().toISOString().slice(0, 10) + '.json';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const importScenarios = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const data = JSON.parse(ev.target.result);
+        if (Array.isArray(data)) {
+          const imported = data.map(sc => normaliseScenario(sc));
+          setScenarios(imported);
+          if (selectedScenario && !imported.some(sc => sc.id === selectedScenario)) setSelectedScenario(null);
+          setSelectedAddOns(prev => prev.filter(id => imported.some(sc => sc.id === id)));
+          showSaved();
+        }
+      } catch (err) { /* ignore invalid JSON */ }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+
   const removeScenario = (scenarioId) => {
     setScenarios(prev => prev.filter(sc => sc.id !== scenarioId));
     if (selectedScenario === scenarioId) setSelectedScenario(null);
+    setSelectedAddOns(prev => prev.filter(id => id !== scenarioId));
     setConfirmAction(null);
     showSaved();
   };
@@ -345,6 +421,7 @@ export default function SIPPricingPlaybook() {
   const resetScenariosToFactory = () => {
     setScenarios(DEFAULT_SCENARIOS.map(sc => normaliseScenario(sc)));
     setSelectedScenario(null);
+    setSelectedAddOns([]);
     setConfirmAction(null);
     showSaved();
   };
@@ -352,8 +429,36 @@ export default function SIPPricingPlaybook() {
   const toggleScenarioItem = (dotPath) => {
     setScenarioForm(prev => {
       const items = prev.items || [];
-      return { ...prev, items: items.includes(dotPath) ? items.filter(i => i !== dotPath) : [...items, dotPath] };
+      const itemSettings = { ...(prev.itemSettings || {}) };
+      if (items.includes(dotPath)) {
+        delete itemSettings[dotPath];
+        return { ...prev, items: items.filter(i => i !== dotPath), itemSettings };
+      }
+      itemSettings[dotPath] = { defaultQty: 1, quantityEditable: true, minQty: 0, maxQty: 9999, mandatory: false };
+      return { ...prev, items: [...items, dotPath], itemSettings };
     });
+  };
+
+  const updateScenarioItemSetting = (dotPath, field, value) => {
+    setScenarioForm(prev => ({
+      ...prev,
+      itemSettings: {
+        ...(prev.itemSettings || {}),
+        [dotPath]: {
+          ...((prev.itemSettings || {})[dotPath] || { defaultQty: 1, quantityEditable: true, minQty: 0, maxQty: 9999, mandatory: false }),
+          [field]: value,
+        }
+      }
+    }));
+  };
+
+  const toggleAddOnScenario = (scenarioId) => {
+    setSelectedAddOns(prev => prev.includes(scenarioId) ? prev.filter(id => id !== scenarioId) : [...prev, scenarioId]);
+  };
+
+  const getScenarioItemSetting = (dotPath) => {
+    if (isCustomScenario || !scenarioObj) return { defaultQty: 0, quantityEditable: true, minQty: 0, maxQty: 9999, mandatory: false };
+    return (scenarioObj.itemSettings || {})[dotPath] || { defaultQty: 0, quantityEditable: true, minQty: 0, maxQty: 9999, mandatory: false };
   };
 
   const applyScenarioColor = (colorName) => {
@@ -463,17 +568,26 @@ export default function SIPPricingPlaybook() {
   // ─── CALCULATOR FUNCTIONS ───────────────────────────────
   const scenarioObj = scenarios.find(s => s.id === selectedScenario);
   const isCustomScenario = selectedScenario === 'custom';
+  const selectedAddOnScenarios = selectedAddOns.map(id => scenarios.find(s => s.id === id)).filter(Boolean);
 
   const getActiveItems = () => {
-    if (isCustomScenario) {
-      return Object.keys(customItems).filter(k => customItems[k]);
-    }
-    return scenarioObj ? scenarioObj.items : [];
+    const baseItems = isCustomScenario ? Object.keys(customItems).filter(k => customItems[k]) : (scenarioObj ? scenarioObj.items : []);
+    const addOnItems = isCustomScenario ? [] : selectedAddOnScenarios.flatMap(sc => sc.items || []);
+    return Array.from(new Set([...baseItems, ...addOnItems]));
   };
 
-  const getQty = (dotPath) => qtyInputs[dotPath] || 0;
+  const getQty = (dotPath) => {
+    if (qtyInputs[dotPath] !== undefined) return qtyInputs[dotPath];
+    const setting = getScenarioItemSetting(dotPath);
+    return Number(setting.defaultQty) || 0;
+  };
   const setQty = (dotPath, val) => {
-    setQtyInputs(prev => ({ ...prev, [dotPath]: Math.max(0, Number(val) || 0) }));
+    const setting = getScenarioItemSetting(dotPath);
+    if (!setting.quantityEditable) return;
+    const minQty = Number(setting.minQty) || 0;
+    const maxQty = Number(setting.maxQty) || 9999;
+    const nextQty = Math.max(minQty, Math.min(maxQty, Number(val) || 0));
+    setQtyInputs(prev => ({ ...prev, [dotPath]: nextQty }));
   };
 
   const calcLineTotal = (dotPath) => {
@@ -534,7 +648,7 @@ export default function SIPPricingPlaybook() {
     if (lines.length === 0) return;
     const ref = quoteRef || 'QT-' + Date.now().toString(36).toUpperCase();
     setQuoteItems(prev => [...prev, {
-      scenario: isCustomScenario ? 'Custom Selection' : (scenarioObj?.name || 'Custom'),
+      scenario: isCustomScenario ? 'Custom Selection' : [scenarioObj?.name || 'Custom', ...selectedAddOnScenarios.map(sc => sc.name)].join(' + '),
       lines, marginPct, date: new Date().toLocaleString('en-MY', { timeZone: 'Asia/Kuala_Lumpur' }),
       customer: customerName || 'Not specified', ref, validity: quoteValidity,
     }]);
@@ -812,31 +926,58 @@ export default function SIPPricingPlaybook() {
               <p style={{ fontSize: 13, color: INK3, maxWidth: 300, textAlign: 'right', lineHeight: 1.55, margin: 0 }}>Select the scenario, enter quantities, set margin, then save to quote.</p>
             </div>
 
-            {/* Scenario cards */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 10, marginBottom: 20 }}>
-              {scenarios.map(sc => (
-                <button key={sc.id} onClick={() => { setSelectedScenario(sc.id); setQtyInputs({}); setCustomItems({}); }}
-                  style={{
-                    background: selectedScenario === sc.id ? sc.colorSoft : SURFACE,
-                    border: selectedScenario === sc.id ? '2px solid ' + sc.color : '1px solid ' + BORDER,
-                    borderRadius: 8, padding: '14px 16px', cursor: 'pointer', textAlign: 'left',
-                    transition: 'all 0.15s ease-out',
-                    boxShadow: selectedScenario === sc.id ? '0 1px 3px rgba(0,0,0,0.08)' : '0 1px 2px rgba(0,0,0,0.04)',
-                  }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                    <div style={{ width: 26, height: 26, borderRadius: 6, background: selectedScenario === sc.id ? sc.color : BORDER, display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.15s' }}>
-                      <SI c={getScenarioIcon(sc)} style={{ width: 13, height: 13, color: selectedScenario === sc.id ? SURFACE : INK3 }} />
+            {/* Scenario cards grouped by section */}
+            {SCENARIO_SECTION_OPTIONS.map(section => {
+              const sectionScenarios = scenarios.filter(sc => (sc.scenarioType || 'certified') === section.id);
+              if (sectionScenarios.length === 0) return null;
+              return (
+                <div key={section.id} style={{ marginBottom: 18 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 8 }}>
+                    <div>
+                      <p style={{ fontSize: 15, fontWeight: 800, color: INK, margin: 0 }}>{section.label}</p>
+                      <p style={{ fontSize: 12, color: INK3, margin: '3px 0 0' }}>{section.desc}</p>
                     </div>
-                    <span style={{ fontWeight: 700, fontSize: 13, color: INK, letterSpacing: '-0.01em' }}>{sc.name}</span>
+                    {section.id === 'addon' && selectedAddOns.length > 0 && (
+                      <button onClick={() => setSelectedAddOns([])} style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 11, background: SURFACE, color: RED, border: '1.5px solid #FECACA', borderRadius: 7, padding: '5px 10px', cursor: 'pointer' }}>Clear Add-Ons</button>
+                    )}
                   </div>
-                  <p style={{ fontSize: 12, color: INK3, lineHeight: 1.5, margin: 0 }}>{sc.desc}</p>
-                  <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: INK3, letterSpacing: '0.06em', textTransform: 'uppercase', marginTop: 8, display: 'block' }}>{sc.items.length} line items</span>
-                </button>
-              ))}
-              {/* Custom scenario */}
-              <button onClick={() => { setSelectedScenario('custom'); setQtyInputs({}); setCustomItems({}); }}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 10 }}>
+                    {sectionScenarios.map(sc => {
+                      const isAddOn = section.id === 'addon';
+                      const active = isAddOn ? selectedAddOns.includes(sc.id) : selectedScenario === sc.id;
+                      return (
+                        <button key={sc.id} onClick={() => {
+                          if (isAddOn) { toggleAddOnScenario(sc.id); return; }
+                          setSelectedScenario(sc.id); setQtyInputs({}); setCustomItems({});
+                        }}
+                          style={{
+                            background: active ? sc.colorSoft : SURFACE,
+                            border: active ? '2px solid ' + sc.color : '1px solid ' + BORDER,
+                            borderRadius: 8, padding: '14px 16px', cursor: 'pointer', textAlign: 'left',
+                            transition: 'all 0.15s ease-out',
+                            boxShadow: active ? '0 1px 3px rgba(0,0,0,0.08)' : '0 1px 2px rgba(0,0,0,0.04)',
+                          }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                            <div style={{ width: 26, height: 26, borderRadius: 6, background: active ? sc.color : BORDER, display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.15s' }}>
+                              <SI c={getScenarioIcon(sc)} style={{ width: 13, height: 13, color: active ? SURFACE : INK3 }} />
+                            </div>
+                            <span style={{ fontWeight: 700, fontSize: 13, color: INK, letterSpacing: '-0.01em' }}>{sc.name}</span>
+                          </div>
+                          <p style={{ fontSize: 12, color: INK3, lineHeight: 1.5, margin: 0 }}>{sc.desc}</p>
+                          <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: INK3, letterSpacing: '0.06em', textTransform: 'uppercase', marginTop: 8, display: 'block' }}>{sc.items.length} line items {isAddOn ? '· optional add-on' : ''}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+
+            {/* Custom scenario */}
+            <div style={{ marginBottom: 20 }}>
+              <button onClick={() => { setSelectedScenario('custom'); setSelectedAddOns([]); setQtyInputs({}); setCustomItems({}); }}
                 style={{
-                  background: selectedScenario === 'custom' ? ACCENT_SOFT : SURFACE,
+                  width: '100%', background: selectedScenario === 'custom' ? ACCENT_SOFT : SURFACE,
                   border: selectedScenario === 'custom' ? '2px solid ' + ACCENT : '1px dashed ' + BORDER,
                   borderRadius: 8, padding: '14px 16px', cursor: 'pointer', textAlign: 'left',
                   transition: 'all 0.15s ease-out',
@@ -920,6 +1061,7 @@ export default function SIPPricingPlaybook() {
                     const lt = calcLineTotal(dotPath);
                     const lineMargin = lt.sell > 0 ? ((lt.sell - lt.internal - lt.external) / lt.sell * 100) : 0;
                     const hasQty = getQty(dotPath) > 0;
+                    const qtySetting = getScenarioItemSetting(dotPath);
                     return (
                       <div key={dotPath} style={{ display: 'grid', gridTemplateColumns: '2.4fr 60px 90px 90px 90px 70px', padding: '8px 18px', borderBottom: '1px solid ' + BORDER, alignItems: 'center', background: hasQty ? ACCENT_SOFT : SURFACE, transition: 'background 0.15s' }}>
                         <div>
@@ -927,8 +1069,9 @@ export default function SIPPricingPlaybook() {
                           <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 8, color: INK3, marginLeft: 6, letterSpacing: '0.04em' }}>{item.unit}</span>
                         </div>
                         <div style={{ textAlign: 'center' }}>
-                          <input type="number" min="0" value={getQty(dotPath) || ''} onChange={e => setQty(dotPath, e.target.value)} placeholder="0"
-                            style={{ width: 48, padding: '3px 5px', fontFamily: "'JetBrains Mono', monospace", fontSize: 11, border: '1.5px solid ' + BORDER, background: SURFACE, borderRadius: 6, textAlign: 'center', color: INK }} />
+                          <input type="number" min={qtySetting.minQty || 0} max={qtySetting.maxQty || 9999} value={getQty(dotPath) || ''} onChange={e => setQty(dotPath, e.target.value)} placeholder="0" disabled={!qtySetting.quantityEditable}
+                            style={{ width: 48, padding: '3px 5px', fontFamily: "'JetBrains Mono', monospace", fontSize: 11, border: '1.5px solid ' + BORDER, background: qtySetting.quantityEditable ? SURFACE : BG, borderRadius: 6, textAlign: 'center', color: qtySetting.quantityEditable ? INK : INK3, cursor: qtySetting.quantityEditable ? 'text' : 'not-allowed' }} />
+                          {!qtySetting.quantityEditable && <span title="Quantity locked by admin" style={{ fontSize: 10, color: INK3, marginLeft: 3 }}>🔒</span>}
                         </div>
                         <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, textAlign: 'right', color: INK2 }}>{formatMYR(lt.internal)}</span>
                         <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, textAlign: 'right', color: INK2 }}>{formatMYR(lt.external)}</span>
@@ -1177,11 +1320,22 @@ export default function SIPPricingPlaybook() {
                 <button onClick={startAddScenario} style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 12, background: ACCENT, color: SURFACE, border: 'none', borderRadius: 8, padding: '8px 14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5 }}>
                   <Plus style={{ width: 13, height: 13 }} /> Add Scenario
                 </button>
+                <button onClick={exportScenarios} style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 12, background: SURFACE, color: ACCENT, border: '1.5px solid ' + ACCENT, borderRadius: 8, padding: '8px 14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5 }}>
+                  <Download style={{ width: 13, height: 13 }} /> Export
+                </button>
+                <button onClick={() => scenarioImportRef.current?.click()} style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 12, background: SURFACE, color: ACCENT2, border: '1.5px solid ' + ACCENT2, borderRadius: 8, padding: '8px 14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5 }}>
+                  <Upload style={{ width: 13, height: 13 }} /> Import
+                </button>
+                <input ref={scenarioImportRef} type="file" accept="application/json,.json" onChange={importScenarios} style={{ display: 'none' }} />
                 <button onClick={() => setConfirmAction({ title: 'Reset Scenarios', message: 'This will reset all scenario cards back to the built-in defaults. Cost database items will not be changed.', confirmLabel: 'Reset Scenarios', onConfirm: resetScenariosToFactory })}
                   style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 12, background: SURFACE, color: RED, border: '1.5px solid #FECACA', borderRadius: 8, padding: '8px 14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5 }}>
                   <RefreshCw style={{ width: 13, height: 13 }} /> Reset Scenarios
                 </button>
               </div>
+            </div>
+
+            <div style={{ background: GREEN_SOFT, border: '1px solid #BBF7D0', borderRadius: 8, padding: '10px 14px', marginBottom: 14 }}>
+              <p style={{ fontSize: 12, color: GREEN, fontWeight: 600, margin: 0 }}>Saved scenario changes are applied immediately to the Sales Calculator. No code change or page refresh is required.</p>
             </div>
 
             {showScenarioForm && (
@@ -1200,6 +1354,13 @@ export default function SIPPricingPlaybook() {
                     <label style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: INK3, display: 'block', marginBottom: 5 }}>Scenario ID</label>
                     <input value={scenarioForm.id} onChange={e => setScenarioForm(p => ({ ...p, id: e.target.value }))} placeholder="auto-generated-if-blank" style={{ width: '100%', padding: '8px 10px', fontFamily: "'JetBrains Mono', monospace", fontSize: 12, border: '1.5px solid ' + BORDER, borderRadius: 8, boxSizing: 'border-box' }} />
                   </div>
+                </div>
+
+                <div style={{ marginBottom: 12 }}>
+                  <label style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: INK3, display: 'block', marginBottom: 5 }}>Scenario Section</label>
+                  <select value={scenarioForm.scenarioType || 'certified'} onChange={e => setScenarioForm(p => ({ ...p, scenarioType: e.target.value }))} style={{ width: '100%', padding: '8px 10px', fontFamily: "'Inter', sans-serif", fontSize: 13, border: '1.5px solid ' + BORDER, borderRadius: 8, boxSizing: 'border-box' }}>
+                    {SCENARIO_SECTION_OPTIONS.map(section => <option key={section.id} value={section.id}>{section.label}</option>)}
+                  </select>
                 </div>
 
                 <div style={{ marginBottom: 12 }}>
@@ -1224,22 +1385,38 @@ export default function SIPPricingPlaybook() {
 
                 <div style={{ borderTop: '1px solid ' + BORDER, paddingTop: 14 }}>
                   <p style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: INK3, margin: '0 0 10px' }}>Included Cost Items ({(scenarioForm.items || []).length})</p>
+                  <p style={{ fontSize: 12, color: INK3, lineHeight: 1.5, margin: '0 0 12px' }}>For each selected item, admin can define default quantity, whether sales can edit quantity, min/max quantity, and mandatory flag.</p>
                   {catOrder.filter(cat => costDB[cat]).map(cat => (
-                    <div key={cat} style={{ marginBottom: 10 }}>
-                      <p style={{ fontSize: 12, fontWeight: 700, color: INK, margin: '0 0 5px' }}>{catLabels[cat] || cat}</p>
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                    <div key={cat} style={{ marginBottom: 12 }}>
+                      <p style={{ fontSize: 12, fontWeight: 700, color: INK, margin: '0 0 6px' }}>{catLabels[cat] || cat}</p>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                         {Object.keys(costDB[cat]).map(key => {
                           const dotPath = cat + '.' + key;
                           const checked = (scenarioForm.items || []).includes(dotPath);
+                          const setting = (scenarioForm.itemSettings || {})[dotPath] || { defaultQty: 1, quantityEditable: true, minQty: 0, maxQty: 9999, mandatory: false };
                           return (
-                            <button key={dotPath} onClick={() => toggleScenarioItem(dotPath)} style={{ fontSize: 11, padding: '5px 10px', borderRadius: 6, cursor: 'pointer', fontWeight: 500, border: checked ? '1.5px solid ' + ACCENT : '1px solid ' + BORDER, background: checked ? ACCENT_SOFT : SURFACE, color: checked ? ACCENT : INK3 }}>
-                              {checked ? '✓ ' : ''}{costDB[cat][key].label}
-                            </button>
+                            <div key={dotPath} style={{ display: 'grid', gridTemplateColumns: 'minmax(220px, 1.6fr) 70px 95px 70px 70px 90px', gap: 6, alignItems: 'center', padding: '7px 8px', border: '1px solid ' + (checked ? ACCENT + '55' : BORDER), borderRadius: 7, background: checked ? ACCENT_SOFT : SURFACE }}>
+                              <button onClick={() => toggleScenarioItem(dotPath)} style={{ textAlign: 'left', fontSize: 11, padding: '5px 8px', borderRadius: 6, cursor: 'pointer', fontWeight: 600, border: checked ? '1.5px solid ' + ACCENT : '1px solid ' + BORDER, background: checked ? SURFACE : BG, color: checked ? ACCENT : INK3 }}>
+                                {checked ? '✓ ' : ''}{costDB[cat][key].label}
+                              </button>
+                              <input disabled={!checked} type="number" value={setting.defaultQty ?? 1} min="0" onChange={e => updateScenarioItemSetting(dotPath, 'defaultQty', Math.max(0, Number(e.target.value) || 0))} style={{ width: '100%', padding: '5px', fontFamily: "'JetBrains Mono', monospace", fontSize: 11, border: '1.5px solid ' + BORDER, borderRadius: 6, background: checked ? SURFACE : BG }} title="Default Qty" />
+                              <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: checked ? INK2 : INK3 }}>
+                                <input disabled={!checked} type="checkbox" checked={!!setting.quantityEditable} onChange={e => updateScenarioItemSetting(dotPath, 'quantityEditable', e.target.checked)} /> Editable
+                              </label>
+                              <input disabled={!checked} type="number" value={setting.minQty ?? 0} min="0" onChange={e => updateScenarioItemSetting(dotPath, 'minQty', Math.max(0, Number(e.target.value) || 0))} style={{ width: '100%', padding: '5px', fontFamily: "'JetBrains Mono', monospace", fontSize: 11, border: '1.5px solid ' + BORDER, borderRadius: 6, background: checked ? SURFACE : BG }} title="Min Qty" />
+                              <input disabled={!checked} type="number" value={setting.maxQty ?? 9999} min="0" onChange={e => updateScenarioItemSetting(dotPath, 'maxQty', Math.max(0, Number(e.target.value) || 0))} style={{ width: '100%', padding: '5px', fontFamily: "'JetBrains Mono', monospace", fontSize: 11, border: '1.5px solid ' + BORDER, borderRadius: 6, background: checked ? SURFACE : BG }} title="Max Qty" />
+                              <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: checked ? INK2 : INK3 }}>
+                                <input disabled={!checked} type="checkbox" checked={!!setting.mandatory} onChange={e => updateScenarioItemSetting(dotPath, 'mandatory', e.target.checked)} /> Mandatory
+                              </label>
+                            </div>
                           );
                         })}
                       </div>
                     </div>
                   ))}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'minmax(220px,1.6fr) 70px 95px 70px 70px 90px', gap: 6, marginTop: 8, fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: INK3, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                    <span>Item</span><span>Default</span><span>Qty Mode</span><span>Min</span><span>Max</span><span>Mandatory</span>
+                  </div>
                 </div>
 
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, borderTop: '1px solid ' + BORDER, paddingTop: 14, marginTop: 6 }}>
@@ -1262,12 +1439,15 @@ export default function SIPPricingPlaybook() {
                         <div>
                           <p style={{ fontSize: 13, fontWeight: 700, color: INK, margin: '0 0 3px' }}>{sc.name}</p>
                           <p style={{ fontSize: 12, color: INK3, lineHeight: 1.5, margin: 0 }}>{sc.desc}</p>
-                          <p style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: INK3, letterSpacing: '0.06em', textTransform: 'uppercase', margin: '8px 0 0' }}>{sc.items.length} line items</p>
+                          <p style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: INK3, letterSpacing: '0.06em', textTransform: 'uppercase', margin: '8px 0 0' }}>{SCENARIO_SECTION_LABELS[sc.scenarioType || 'certified']} · {sc.items.length} line items</p>
                         </div>
                       </div>
-                      <div style={{ display: 'flex', gap: 5 }}>
-                        <button onClick={() => startEditScenario(sc)} style={{ background: SURFACE, border: '1.5px solid ' + BORDER, borderRadius: 6, padding: 5, cursor: 'pointer', color: ACCENT }}><Edit style={{ width: 13, height: 13 }} /></button>
-                        <button onClick={() => setConfirmAction({ title: 'Delete Scenario', message: 'Delete scenario "' + sc.name + '"? Existing saved quotes will not be removed.', confirmLabel: 'Delete Scenario', onConfirm: () => removeScenario(sc.id) })} style={{ background: SURFACE, border: '1.5px solid #FECACA', borderRadius: 6, padding: 5, cursor: 'pointer', color: RED }}><Trash2 style={{ width: 13, height: 13 }} /></button>
+                      <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                        <button title="Move up" onClick={() => moveScenario(sc.id, -1)} style={{ background: SURFACE, border: '1.5px solid ' + BORDER, borderRadius: 6, padding: '4px 7px', cursor: 'pointer', color: INK3, fontWeight: 800, fontSize: 11 }}>↑</button>
+                        <button title="Move down" onClick={() => moveScenario(sc.id, 1)} style={{ background: SURFACE, border: '1.5px solid ' + BORDER, borderRadius: 6, padding: '4px 7px', cursor: 'pointer', color: INK3, fontWeight: 800, fontSize: 11 }}>↓</button>
+                        <button title="Clone scenario" onClick={() => cloneScenario(sc)} style={{ background: SURFACE, border: '1.5px solid ' + BORDER, borderRadius: 6, padding: 5, cursor: 'pointer', color: ACCENT2 }}><Copy style={{ width: 13, height: 13 }} /></button>
+                        <button title="Edit scenario" onClick={() => startEditScenario(sc)} style={{ background: SURFACE, border: '1.5px solid ' + BORDER, borderRadius: 6, padding: 5, cursor: 'pointer', color: ACCENT }}><Edit style={{ width: 13, height: 13 }} /></button>
+                        <button title="Delete scenario" onClick={() => setConfirmAction({ title: 'Delete Scenario', message: 'Delete scenario "' + sc.name + '"? Existing saved quotes will not be removed.', confirmLabel: 'Delete Scenario', onConfirm: () => removeScenario(sc.id) })} style={{ background: SURFACE, border: '1.5px solid #FECACA', borderRadius: 6, padding: 5, cursor: 'pointer', color: RED }}><Trash2 style={{ width: 13, height: 13 }} /></button>
                       </div>
                     </div>
                   </div>
