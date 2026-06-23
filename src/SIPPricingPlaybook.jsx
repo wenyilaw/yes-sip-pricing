@@ -641,10 +641,24 @@ export default function SIPPricingPlaybook() {
   const isCustomScenario = selectedScenario === 'custom';
   const selectedAddOnScenarios = selectedAddOns.map(id => scenarios.find(s => s.id === id)).filter(Boolean);
 
+  const getActiveBundleRule = () => ({
+    ...DEFAULT_BUNDLE_RULES.channelDidLink,
+    ...((bundleRules && bundleRules.channelDidLink) || {}),
+  });
+
   const getActiveItems = () => {
     const baseItems = isCustomScenario ? Object.keys(customItems).filter(k => customItems[k]) : (scenarioObj ? scenarioObj.items : []);
     const addOnItems = isCustomScenario ? [] : selectedAddOnScenarios.flatMap(sc => sc.items || []);
-    return Array.from(new Set([...baseItems, ...addOnItems]));
+    const rule = getActiveBundleRule();
+    const merged = [...baseItems, ...addOnItems];
+
+    // Auto-include the linked DID line whenever the selected scenario has the configured SIP channel item.
+    // Example: Sales enters 5 channels and the rule is 2 DID per channel, then DID line appears as 10.
+    if (rule.enabled && merged.includes(rule.channelItem) && rule.didItem && !merged.includes(rule.didItem)) {
+      merged.push(rule.didItem);
+    }
+
+    return Array.from(new Set(merged));
   };
 
   const getActiveLineGroups = () => {
@@ -662,9 +676,9 @@ export default function SIPPricingPlaybook() {
   };
 
   const isBundleDidItem = (dotPath) => {
-    const rule = bundleRules.channelDidLink || DEFAULT_BUNDLE_RULES.channelDidLink;
+    const rule = getActiveBundleRule();
     const activeItems = getActiveItems();
-    return !!(rule.enabled && dotPath === rule.didItem && activeItems.includes(rule.channelItem) && activeItems.includes(rule.didItem));
+    return !!(rule.enabled && dotPath === rule.didItem && activeItems.includes(rule.channelItem));
   };
 
   const getBaseQty = (dotPath) => {
@@ -674,20 +688,32 @@ export default function SIPPricingPlaybook() {
   };
 
   const getQty = (dotPath) => {
-    if (isBundleDidItem(dotPath)) {
-      const rule = bundleRules.channelDidLink || DEFAULT_BUNDLE_RULES.channelDidLink;
+    const rule = getActiveBundleRule();
+    if (rule.enabled && dotPath === rule.didItem && getActiveItems().includes(rule.channelItem)) {
       return getBaseQty(rule.channelItem) * (Number(rule.didPerChannel) || 0);
     }
     return getBaseQty(dotPath);
   };
+
   const setQty = (dotPath, val) => {
-    if (isBundleDidItem(dotPath)) return;
+    const rule = getActiveBundleRule();
+
+    // DID quantity is controlled by the SIP channel quantity when bundle rule is enabled.
+    if (rule.enabled && dotPath === rule.didItem) return;
+
     const setting = getScenarioItemSetting(dotPath);
     if (!setting.quantityEditable) return;
     const minQty = Number(setting.minQty) || 0;
     const maxQty = Number(setting.maxQty) || 9999;
     const nextQty = Math.max(minQty, Math.min(maxQty, Number(val) || 0));
-    setQtyInputs(prev => ({ ...prev, [dotPath]: nextQty }));
+
+    setQtyInputs(prev => {
+      const updated = { ...prev, [dotPath]: nextQty };
+      if (rule.enabled && dotPath === rule.channelItem && rule.didItem) {
+        updated[rule.didItem] = nextQty * (Number(rule.didPerChannel) || 0);
+      }
+      return updated;
+    });
   };
 
   const calcLineTotal = (dotPath) => {
@@ -1213,7 +1239,7 @@ export default function SIPPricingPlaybook() {
                             <div>
                               <span style={{ fontSize: 12, fontWeight: 500, color: INK }}>{item.label}</span>
                               <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 8, color: INK3, marginLeft: 6, letterSpacing: '0.04em' }}>{item.unit}</span>
-                              {bundleLinkedDid && <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 8, color: ACCENT, marginLeft: 6, letterSpacing: '0.04em' }}>AUTO: {activeBundleRule.didPerChannel} DID per channel</span>}
+                              {bundleLinkedDid && <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 8, color: ACCENT, marginLeft: 6, letterSpacing: '0.04em' }}>AUTO: {getActiveBundleRule().didPerChannel} DID per channel</span>}
                             </div>
                             <div style={{ textAlign: 'center' }}>
                               <input type="number" min={qtySetting.minQty || 0} max={qtySetting.maxQty || 9999} value={getQty(dotPath) || ''} onChange={e => setQty(dotPath, e.target.value)} placeholder="0" disabled={!qtyEditable}
