@@ -241,15 +241,14 @@ const catLabels = {
 
 const catOrder = ['sipTrunk', 'channels', 'numbers', 'integration', 'cloudPBX', 'professionalServices', 'callRates'];
 
-const sanitiseCostDB = (db = DEFAULT_COST_DB) => {
-  const cleaned = { ...DEFAULT_COST_DB, ...(db || {}) };
-  cleaned.channels = { ...DEFAULT_COST_DB.channels, ...(db?.channels || {}) };
-  delete cleaned.channels.channelBundle20;
-  delete cleaned.channels.channelBundle50;
-  return cleaned;
-};
-
 const unitOptions = ['one-time', 'per month', 'per trunk/month', 'per link/month', 'per channel/month', 'per number/month', 'per number/one-time', 'per user/month', 'per unit/month', 'per day', 'per session', 'per site/one-time', 'per minute', 'per message', 'included/month'];
+
+const sanitizeCostDB = (db) => {
+  const next = { ...db, channels: { ...(db.channels || {}) } };
+  delete next.channels.channelBundle20;
+  delete next.channels.channelBundle50;
+  return next;
+};
 
 // ═══════════════════════════════════════════════════════════════
 // MAIN COMPONENT
@@ -270,11 +269,11 @@ export default function SIPPricingPlaybook() {
   const [costDB, setCostDB] = useState(() => {
     try {
       const saved = localStorage.getItem('sipCostDB_v3');
-      if (!saved) return sanitiseCostDB(DEFAULT_COST_DB);
+      if (!saved) return sanitizeCostDB(DEFAULT_COST_DB);
       const parsed = JSON.parse(saved);
       // Merge saved database with new built-in categories so new sections appear after upgrades.
-      return sanitiseCostDB(parsed);
-    } catch (e) { return sanitiseCostDB(DEFAULT_COST_DB); }
+      return sanitizeCostDB({ ...DEFAULT_COST_DB, ...parsed, channels: { ...(DEFAULT_COST_DB.channels || {}), ...((parsed || {}).channels || {}) } });
+    } catch (e) { return sanitizeCostDB(DEFAULT_COST_DB); }
   });
   const [scenarios, setScenarios] = useState(() => {
     try {
@@ -602,7 +601,7 @@ export default function SIPPricingPlaybook() {
   };
 
   const resetToFactory = () => {
-    setCostDB(sanitiseCostDB(DEFAULT_COST_DB));
+    setCostDB(sanitizeCostDB(DEFAULT_COST_DB));
     try { localStorage.removeItem('sipCostDB_default'); } catch (e) { /* ignore */ }
     setConfirmAction(null);
     showSaved();
@@ -629,7 +628,7 @@ export default function SIPPricingPlaybook() {
       try {
         const data = JSON.parse(ev.target.result);
         if (typeof data === 'object' && Object.keys(data).length > 0) {
-          setCostDB(sanitiseCostDB(data));
+          setCostDB(data);
           showSaved();
         }
       } catch (err) { /* ignore invalid JSON */ }
@@ -807,8 +806,8 @@ export default function SIPPricingPlaybook() {
         '<td>' + esc(section) + '</td>' +
         '<td>' + esc(l.label) + '</td>' +
         '<td>' + esc(l.unit) + '</td>' +
-        '<td style="mso-number-format:\\"0\\";">' + l.qty + '</td>' +
-        '<td style="mso-number-format:\\"#,##0.00\\";">' + (l.internal + l.external).toFixed(2) + '</td>' +
+        '<td>' + l.qty + '</td>' +
+        '<td>' + (l.internal + l.external).toFixed(2) + '</td>' +
         '</tr>'
       )).join('');
       return rows;
@@ -816,17 +815,17 @@ export default function SIPPricingPlaybook() {
 
     const html = '<html><head><meta charset="utf-8" /></head><body>' +
       '<table border="1">' +
-      '<tr><th colspan="5" style="font-size:16px;">SIP Services Quotation</th></tr>' +
+      '<tr><th colspan="5" style="font-size:16px;">SIP Services Estimated Cost</th></tr>' +
       '<tr><td><b>Reference</b></td><td colspan="4">' + esc(qi.ref) + '</td></tr>' +
       '<tr><td><b>Customer</b></td><td colspan="4">' + esc(qi.customer) + '</td></tr>' +
       '<tr><td><b>Scenario</b></td><td colspan="4">' + esc(qi.scenario) + '</td></tr>' +
       '<tr><td><b>Date</b></td><td colspan="4">' + esc(qi.date) + '</td></tr>' +
       '<tr><td><b>Validity</b></td><td colspan="4">' + esc(qi.validity) + ' days</td></tr>' +
       '<tr></tr>' +
-      '<tr><th>Section</th><th>Item</th><th>Unit</th><th>Qty</th><th>Cost (RM)</th></tr>' +
+      '<tr><th>Section</th><th>Item</th><th>Unit</th><th>Qty</th><th>Estimated Cost (RM)</th></tr>' +
       lineRows +
       '<tr></tr>' +
-      '<tr><td colspan="4"><b>Total Cost</b></td><td style="mso-number-format:\\"#,##0.00\\";">' + totalCost.toFixed(2) + '</td></tr>' +
+      '<tr><td colspan="4"><b>Total Estimated Cost</b></td><td>' + totalCost.toFixed(2) + '</td></tr>' +
       '</table></body></html>';
     const blob = new Blob([html], { type: 'application/vnd.ms-excel' });
     const url = URL.createObjectURL(blob);
@@ -864,7 +863,7 @@ export default function SIPPricingPlaybook() {
       '<th style="padding:8px 12px;text-align:left;border-bottom:2px solid #0F172A;font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:#64748B;background:#F8F9FA;">Item</th>' +
       '<th style="padding:8px 12px;text-align:center;border-bottom:2px solid #0F172A;font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:#64748B;background:#F8F9FA;">Qty</th>' +
       '<th style="padding:8px 12px;text-align:left;border-bottom:2px solid #0F172A;font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:#64748B;background:#F8F9FA;">Unit</th>' +
-      '<th style="padding:8px 12px;text-align:right;border-bottom:2px solid #0F172A;font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:#64748B;background:#F8F9FA;">Cost (RM)</th>' +
+      '<th style="padding:8px 12px;text-align:right;border-bottom:2px solid #0F172A;font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:#64748B;background:#F8F9FA;">Estimated Cost (RM)</th>' +
       '</tr></thead><tbody>' + renderRows(lines) + '</tbody>' +
       '<tfoot><tr style="background:#F8F9FA;font-weight:700;">' +
       '<td style="padding:10px 12px;border-top:2px solid #0F172A;font-size:13px;" colspan="3">Subtotal</td>' +
@@ -878,7 +877,7 @@ export default function SIPPricingPlaybook() {
       '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:32px;border-bottom:3px solid #0F172A;padding-bottom:20px;">' +
       '<div><div style="width:40px;height:40px;background:#2563EB;border-radius:8px;display:flex;align-items:center;justify-content:center;margin-bottom:12px;">' +
       '<span style="color:white;font-size:18px;font-weight:800;">S</span></div>' +
-      '<h1 style="font-size:24px;font-weight:800;letter-spacing:-0.02em;margin:0;">SIP Services Quotation</h1>' +
+      '<h1 style="font-size:24px;font-weight:800;letter-spacing:-0.02em;margin:0;">SIP Services Estimated Cost</h1>' +
       '<p style="font-size:12px;color:#64748B;margin:4px 0 0;">Confidential</p></div>' +
       '<div style="text-align:right;">' +
       '<p style="font-family:monospace;font-size:12px;margin:0;"><strong>Ref:</strong> ' + qi.ref + '</p>' +
@@ -895,14 +894,14 @@ export default function SIPPricingPlaybook() {
       sectionBlock('Monthly Recurring Charges', recurLines, rcCost) +
       '<div style="background:#0F172A;border-radius:8px;padding:20px 24px;color:white;margin-top:24px;">' +
       '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;">' +
-      '<div><p style="font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:rgba(255,255,255,0.6);margin:0 0 4px;font-weight:600;">One-Time Total</p>' +
+      '<div><p style="font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:rgba(255,255,255,0.6);margin:0 0 4px;font-weight:600;">One-Time Estimated Cost</p>' +
       '<p style="font-size:22px;font-weight:800;margin:0;">' + formatMYR(otCost) + '</p></div>' +
-      '<div><p style="font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:rgba(255,255,255,0.6);margin:0 0 4px;font-weight:600;">Monthly Recurring</p>' +
+      '<div><p style="font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:rgba(255,255,255,0.6);margin:0 0 4px;font-weight:600;">Monthly Estimated Cost</p>' +
       '<p style="font-size:22px;font-weight:800;margin:0;">' + formatMYR(rcCost) + '</p></div>' +
-      '<div><p style="font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:rgba(255,255,255,0.6);margin:0 0 4px;font-weight:600;">First Month Total</p>' +
+      '<div><p style="font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:rgba(255,255,255,0.6);margin:0 0 4px;font-weight:600;">First Month Estimated Cost</p>' +
       '<p style="font-size:22px;font-weight:800;margin:0;color:#60A5FA;">' + formatMYR(otCost + rcCost) + '</p></div></div>' +
       '<div style="margin-top:16px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.15);">' +
-      '<span style="font-size:12px;color:rgba(255,255,255,0.6);">Total Cost: ' + formatMYR(totalCost) + '</span></div></div>' +
+      '<span style="font-size:12px;color:rgba(255,255,255,0.6);">Total Estimated Cost: ' + formatMYR(totalCost) + '</span></div></div>' +
       '<div style="margin-top:28px;padding-top:16px;border-top:1px solid #E2E8F0;">' +
       '<p style="font-size:11px;color:#64748B;line-height:1.7;margin:0;">' +
       'This quotation is valid for ' + qi.validity + ' days from the date of issue. All prices are in Malaysian Ringgit (MYR). ' +
@@ -1002,7 +1001,7 @@ export default function SIPPricingPlaybook() {
     { id: 'sales', label: 'Sales Calculator', icon: Calculator, roles: ['admin', 'editor', 'sales'] },
     { id: 'engineering', label: 'Cost Database', icon: Settings, roles: ['admin', 'editor', 'sales'] },
     { id: 'scenarios', label: 'Scenarios', icon: Shield, roles: ['admin'] },
-    { id: 'quotes', label: 'Saved Quotes', icon: FileText, roles: ['admin', 'editor', 'sales'] },
+    { id: 'quotes', label: 'Estimated Cost', icon: FileText, roles: ['admin', 'editor', 'sales'] },
     { id: 'users', label: 'User Management', icon: Users, roles: ['admin'] },
   ].filter(t => t.roles.includes(currentUser.role));
 
@@ -1226,7 +1225,7 @@ export default function SIPPricingPlaybook() {
                 {/* Line items table */}
                 <div style={{ background: SURFACE, border: '1px solid ' + BORDER, borderRadius: 8, overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
                   <div style={{ display: 'grid', gridTemplateColumns: '2.4fr 60px 90px 90px 90px 70px', padding: '8px 18px', borderBottom: '2px solid ' + INK, fontFamily: "'JetBrains Mono', monospace", fontSize: 9, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: INK3, background: BG }}>
-                    <span>Line Item</span><span style={{ textAlign: 'center' }}>Qty</span><span style={{ textAlign: 'right' }}>Int. Cost</span><span style={{ textAlign: 'right' }}>Ext. Cost</span><span style={{ textAlign: 'right' }}>Cost</span><span style={{ textAlign: 'right' }}>Margin</span>
+                    <span>Line Item</span><span style={{ textAlign: 'center' }}>Qty</span><span style={{ textAlign: 'right' }}>Int. Cost</span><span style={{ textAlign: 'right' }}>Ext. Cost</span><span style={{ textAlign: 'right' }}>Estimated Cost</span><span style={{ textAlign: 'right' }}>Margin</span>
                   </div>
                   {getActiveLineGroups().map(group => (
                     <React.Fragment key={group.section}>
@@ -1275,15 +1274,15 @@ export default function SIPPricingPlaybook() {
                 {/* Breakdown + Stat tiles */}
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10, marginTop: 14 }}>
                   <div style={{ background: ACCENT, borderRadius: 8, padding: '18px 20px' }}>
-                    <p style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.7)', margin: '0 0 4px' }}>One-Time Total</p>
+                    <p style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.7)', margin: '0 0 4px' }}>One-Time Estimated Cost</p>
                     <p style={{ fontWeight: 800, fontSize: 26, color: SURFACE, letterSpacing: '-0.02em', lineHeight: 1, margin: 0 }}>{formatMYR(breakdown.oneTimeSell)}</p>
                   </div>
                   <div style={{ background: GREEN, borderRadius: 8, padding: '18px 20px' }}>
-                    <p style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.7)', margin: '0 0 4px' }}>Monthly Recurring</p>
+                    <p style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.7)', margin: '0 0 4px' }}>Monthly Estimated Cost</p>
                     <p style={{ fontWeight: 800, fontSize: 26, color: SURFACE, letterSpacing: '-0.02em', lineHeight: 1, margin: 0 }}>{formatMYR(breakdown.recurSell)}</p>
                   </div>
                   <div style={{ background: ACCENT2, borderRadius: 8, padding: '18px 20px' }}>
-                    <p style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.7)', margin: '0 0 4px' }}>First Month Total</p>
+                    <p style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.7)', margin: '0 0 4px' }}>First Month Estimated Cost</p>
                     <p style={{ fontWeight: 800, fontSize: 26, color: SURFACE, letterSpacing: '-0.02em', lineHeight: 1, margin: 0 }}>{formatMYR(breakdown.oneTimeSell + breakdown.recurSell)}</p>
                   </div>
                   <div style={{ background: SURFACE, border: '1px solid ' + BORDER, borderRadius: 8, padding: '18px 20px', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
@@ -1350,38 +1349,7 @@ export default function SIPPricingPlaybook() {
               </div>
             </div>
 
-            {canEditDB && (
-              <div style={{ background: ACCENT_SOFT, border: '1px solid ' + ACCENT + '33', borderRadius: 8, padding: '14px 18px', marginBottom: 14, boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 10 }}>
-                  <div>
-                    <p style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: ACCENT, margin: 0 }}>Bundle Rule</p>
-                    <p style={{ fontSize: 12, color: INK3, margin: '4px 0 0' }}>Auto-tie SIP Channels to Local DID quantity. Example: 5 channels = 10 DID when ratio is 2.</p>
-                  </div>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 700, color: INK }}>
-                    <input type="checkbox" checked={activeBundleRule.enabled} onChange={e => setBundleRules(prev => ({ ...prev, channelDidLink: { ...(prev.channelDidLink || DEFAULT_BUNDLE_RULES.channelDidLink), enabled: e.target.checked } }))} />
-                    Enable rule
-                  </label>
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 120px', gap: 10, alignItems: 'end' }}>
-                  <div>
-                    <label style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: INK3, display: 'block', marginBottom: 4 }}>Channel Item</label>
-                    <select value={activeBundleRule.channelItem} onChange={e => setBundleRules(prev => ({ ...prev, channelDidLink: { ...(prev.channelDidLink || DEFAULT_BUNDLE_RULES.channelDidLink), channelItem: e.target.value } }))} style={{ width: '100%', padding: '7px 10px', fontFamily: "'Inter', sans-serif", fontSize: 12, border: '1.5px solid ' + BORDER, background: SURFACE, borderRadius: 8, color: INK }}>
-                      {Object.keys(costDB.channels || {}).map(key => <option key={key} value={'channels.' + key}>{costDB.channels[key].label}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: INK3, display: 'block', marginBottom: 4 }}>DID Item</label>
-                    <select value={activeBundleRule.didItem} onChange={e => setBundleRules(prev => ({ ...prev, channelDidLink: { ...(prev.channelDidLink || DEFAULT_BUNDLE_RULES.channelDidLink), didItem: e.target.value } }))} style={{ width: '100%', padding: '7px 10px', fontFamily: "'Inter', sans-serif", fontSize: 12, border: '1.5px solid ' + BORDER, background: SURFACE, borderRadius: 8, color: INK }}>
-                      {Object.keys(costDB.numbers || {}).map(key => <option key={key} value={'numbers.' + key}>{costDB.numbers[key].label}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: INK3, display: 'block', marginBottom: 4 }}>DID per Channel</label>
-                    <input type="number" min="0" value={activeBundleRule.didPerChannel} onChange={e => setBundleRules(prev => ({ ...prev, channelDidLink: { ...(prev.channelDidLink || DEFAULT_BUNDLE_RULES.channelDidLink), didPerChannel: Math.max(0, Number(e.target.value) || 0) } }))} style={{ width: '100%', padding: '7px 10px', fontFamily: "'JetBrains Mono', monospace", fontSize: 12, border: '1.5px solid ' + BORDER, background: SURFACE, borderRadius: 8, color: INK, boxSizing: 'border-box' }} />
-                  </div>
-                </div>
-              </div>
-            )}
+            {/* Bundle rule configuration removed from Cost Database. Channel to DID linking remains active in Sales Calculator. */}
 
             {/* Search */}
             <div style={{ marginBottom: 14, position: 'relative' }}>
@@ -1691,10 +1659,10 @@ export default function SIPPricingPlaybook() {
           <div className="fade-in">
             <div style={{ borderBottom: '2px solid ' + INK, paddingBottom: 10, marginBottom: 20, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
               <div>
-                <p style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: ACCENT, letterSpacing: '0.1em', textTransform: 'uppercase', fontWeight: 600, margin: 0 }}>03 / Saved Quotes</p>
-                <h2 style={{ fontWeight: 800, fontSize: 30, color: INK, letterSpacing: '-0.025em', lineHeight: 1.05, margin: '6px 0 0' }}>Quote history</h2>
+                <p style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: ACCENT, letterSpacing: '0.1em', textTransform: 'uppercase', fontWeight: 600, margin: 0 }}>03 / Estimated Cost</p>
+                <h2 style={{ fontWeight: 800, fontSize: 30, color: INK, letterSpacing: '-0.025em', lineHeight: 1.05, margin: '6px 0 0' }}>Estimated cost history</h2>
               </div>
-              <p style={{ fontSize: 13, color: INK3, margin: 0 }}>{quoteItems.length} quote{quoteItems.length !== 1 ? 's' : ''} saved</p>
+              <p style={{ fontSize: 13, color: INK3, margin: 0 }}>{quoteItems.length} estimated cost record{quoteItems.length !== 1 ? 's' : ''} saved</p>
             </div>
 
             {quoteItems.length === 0 ? (
@@ -1702,8 +1670,8 @@ export default function SIPPricingPlaybook() {
                 <div style={{ width: 44, height: 44, borderRadius: 12, background: BG, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px' }}>
                   <FileText style={{ width: 22, height: 22, color: INK3 }} />
                 </div>
-                <p style={{ fontSize: 14, fontWeight: 600, color: INK, margin: '0 0 4px' }}>No quotes saved yet</p>
-                <p style={{ fontSize: 12, color: INK3, margin: 0 }}>Use the Sales Calculator to build and save a quote.</p>
+                <p style={{ fontSize: 14, fontWeight: 600, color: INK, margin: '0 0 4px' }}>No estimated costs saved yet</p>
+                <p style={{ fontSize: 12, color: INK3, margin: 0 }}>Use the Sales Calculator to build and save an estimated cost.</p>
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -1739,7 +1707,7 @@ export default function SIPPricingPlaybook() {
                       </div>
                       <div style={{ padding: '0 18px' }}>
                         <div style={{ display: 'grid', gridTemplateColumns: '110px 2fr 50px 100px', padding: '5px 0', borderBottom: '1px solid ' + BORDER, fontFamily: "'JetBrains Mono', monospace", fontSize: 9, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: INK3 }}>
-                          <span>Section</span><span>Item</span><span style={{ textAlign: 'center' }}>Qty</span><span style={{ textAlign: 'right' }}>Cost</span>
+                          <span>Section</span><span>Item</span><span style={{ textAlign: 'center' }}>Qty</span><span style={{ textAlign: 'right' }}>Estimated Cost</span>
                         </div>
                         {qi.lines.map((l, li) => (
                           <div key={li} style={{ display: 'grid', gridTemplateColumns: '110px 2fr 50px 100px', padding: '5px 0', borderBottom: '1px solid ' + BORDER }}>
