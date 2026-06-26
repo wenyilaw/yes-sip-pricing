@@ -243,11 +243,40 @@ const catOrder = ['sipTrunk', 'channels', 'numbers', 'integration', 'cloudPBX', 
 
 const unitOptions = ['one-time', 'per month', 'per trunk/month', 'per link/month', 'per channel/month', 'per number/month', 'per number/one-time', 'per user/month', 'per unit/month', 'per day', 'per session', 'per site/one-time', 'per minute', 'per message', 'included/month'];
 
+const isRemovedBundlePath = (dotPath = '') => {
+  const value = String(dotPath).toLowerCase();
+  return value.includes('sipdidbundle') || value.includes('sipchanneldidbundle') || value.includes('channel+dids') || value.includes('bundle.sip');
+};
+
+const isRemovedBundleItem = (item, key = '') => {
+  const value = (String(key) + ' ' + String(item?.label || '')).toLowerCase();
+  return value.includes('sip channel + local did bundle') || value.includes('sip channel + did bundle') || value.includes('sipdidbundle') || value.includes('sipchanneldidbundle');
+};
+
 const sanitizeCostDB = (db) => {
   const next = { ...db, channels: { ...(db.channels || {}) } };
   delete next.channels.channelBundle20;
   delete next.channels.channelBundle50;
+  delete next.bundles;
+  Object.keys(next).forEach(cat => {
+    if (!next[cat] || typeof next[cat] !== 'object') return;
+    next[cat] = Object.fromEntries(
+      Object.entries(next[cat]).filter(([key, item]) => !isRemovedBundleItem(item, key))
+    );
+  });
   return next;
+};
+
+const sanitizeScenario = (scenario) => {
+  const itemSettings = { ...(scenario.itemSettings || {}) };
+  Object.keys(itemSettings).forEach(key => {
+    if (isRemovedBundlePath(key)) delete itemSettings[key];
+  });
+  return {
+    ...scenario,
+    items: (scenario.items || []).filter(item => !isRemovedBundlePath(item)),
+    itemSettings,
+  };
 };
 
 // ═══════════════════════════════════════════════════════════════
@@ -279,8 +308,8 @@ export default function SIPPricingPlaybook() {
     try {
       const saved = localStorage.getItem('sipScenarios_v3');
       const base = saved ? JSON.parse(saved) : DEFAULT_SCENARIOS;
-      return base.map((sc, idx) => normaliseScenario(sc, DEFAULT_SCENARIOS[idx] || {}));
-    } catch (e) { return DEFAULT_SCENARIOS.map(sc => normaliseScenario(sc)); }
+      return base.map((sc, idx) => normaliseScenario(sanitizeScenario(sc), DEFAULT_SCENARIOS[idx] || {}));
+    } catch (e) { return DEFAULT_SCENARIOS.map(sc => normaliseScenario(sanitizeScenario(sc))); }
   });
   const [bundleRules, setBundleRules] = useState(() => {
     try {
@@ -394,7 +423,7 @@ export default function SIPPricingPlaybook() {
   };
 
   // ─── SCENARIO MANAGEMENT ───────────────────────────────
-  const allCostItemPaths = () => catOrder.flatMap(cat => costDB[cat] ? Object.keys(costDB[cat]).map(key => cat + '.' + key) : []);
+  const allCostItemPaths = () => catOrder.flatMap(cat => costDB[cat] ? Object.keys(costDB[cat]).map(key => cat + '.' + key).filter(path => !isRemovedBundlePath(path)) : []);
 
   const startAddScenario = () => {
     const firstColor = SCENARIO_COLOR_OPTIONS[0];
@@ -412,7 +441,7 @@ export default function SIPPricingPlaybook() {
   const saveScenario = () => {
     if (!scenarioForm.name.trim()) return;
     const safeId = (scenarioForm.id || scenarioForm.name).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || ('scenario-' + Date.now().toString(36));
-    const scenarioToSave = normaliseScenario({ ...scenarioForm, id: safeId, name: scenarioForm.name.trim(), desc: scenarioForm.desc.trim(), scenarioType: scenarioForm.scenarioType || 'certified', items: scenarioForm.items || [], itemSettings: scenarioForm.itemSettings || {} });
+    const scenarioToSave = normaliseScenario(sanitizeScenario({ ...scenarioForm, id: safeId, name: scenarioForm.name.trim(), desc: scenarioForm.desc.trim(), scenarioType: scenarioForm.scenarioType || 'certified', items: scenarioForm.items || [], itemSettings: scenarioForm.itemSettings || {} }));
     setScenarios(prev => editingScenarioId ? prev.map(sc => sc.id === editingScenarioId ? scenarioToSave : sc) : [...prev, scenarioToSave]);
 
     // Keep Sales Calculator in sync immediately after editing or renaming a scenario ID.
@@ -471,7 +500,7 @@ export default function SIPPricingPlaybook() {
       try {
         const data = JSON.parse(ev.target.result);
         if (Array.isArray(data)) {
-          const imported = data.map(sc => normaliseScenario(sc));
+          const imported = data.map(sc => normaliseScenario(sanitizeScenario(sc)));
           setScenarios(imported);
           if (selectedScenario && !imported.some(sc => sc.id === selectedScenario)) setSelectedScenario(null);
           setSelectedAddOns(prev => prev.filter(id => imported.some(sc => sc.id === id)));
@@ -492,7 +521,7 @@ export default function SIPPricingPlaybook() {
   };
 
   const resetScenariosToFactory = () => {
-    setScenarios(DEFAULT_SCENARIOS.map(sc => normaliseScenario(sc)));
+    setScenarios(DEFAULT_SCENARIOS.map(sc => normaliseScenario(sanitizeScenario(sc))));
     setSelectedScenario(null);
     setSelectedAddOns([]);
     setConfirmAction(null);
@@ -563,6 +592,7 @@ export default function SIPPricingPlaybook() {
 
   const addNewItem = (cat) => {
     if (!newItem.key || !newItem.label) return;
+    if (isRemovedBundleItem(newItem, newItem.key)) return;
     const safeKey = newItem.key.replace(/[^a-zA-Z0-9_]/g, '');
     if (!safeKey) return;
     if (costDB[cat]?.[safeKey]) return;
@@ -663,7 +693,7 @@ export default function SIPPricingPlaybook() {
       merged.push(rule.didItem);
     }
 
-    return Array.from(new Set(merged));
+    return Array.from(new Set(merged)).filter(item => !isRemovedBundlePath(item));
   };
 
   const getActiveLineGroups = () => {
@@ -1224,8 +1254,8 @@ export default function SIPPricingPlaybook() {
 
                 {/* Line items table */}
                 <div style={{ background: SURFACE, border: '1px solid ' + BORDER, borderRadius: 8, overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: '2.4fr 60px 90px 90px 90px 70px', padding: '8px 18px', borderBottom: '2px solid ' + INK, fontFamily: "'JetBrains Mono', monospace", fontSize: 9, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: INK3, background: BG }}>
-                    <span>Line Item</span><span style={{ textAlign: 'center' }}>Qty</span><span style={{ textAlign: 'right' }}>Int. Cost</span><span style={{ textAlign: 'right' }}>Ext. Cost</span><span style={{ textAlign: 'right' }}>Estimated Cost</span><span style={{ textAlign: 'right' }}>Margin</span>
+                  <div style={{ display: 'grid', gridTemplateColumns: '2.4fr 60px 90px 90px 90px 90px 70px', padding: '8px 18px', borderBottom: '2px solid ' + INK, fontFamily: "'JetBrains Mono', monospace", fontSize: 9, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: INK3, background: BG }}>
+                    <span>Line Item</span><span style={{ textAlign: 'center' }}>Qty</span><span style={{ textAlign: 'right' }}>Int. Cost</span><span style={{ textAlign: 'right' }}>Ext. Cost</span><span style={{ textAlign: 'right' }}>Mark Up Cost</span><span style={{ textAlign: 'right' }}>Estimated Cost</span><span style={{ textAlign: 'right' }}>Margin</span>
                   </div>
                   {getActiveLineGroups().map(group => (
                     <React.Fragment key={group.section}>
@@ -1235,12 +1265,13 @@ export default function SIPPricingPlaybook() {
                         if (!item) return null;
                         const lt = calcLineTotal(dotPath);
                         const lineMargin = lt.sell > 0 ? ((lt.sell - lt.internal - lt.external) / lt.sell * 100) : 0;
+                        const lineMarkup = lt.sell - lt.internal - lt.external;
                         const hasQty = getQty(dotPath) > 0;
                         const qtySetting = getScenarioItemSetting(dotPath);
                         const bundleLinkedDid = isBundleDidItem(dotPath);
                         const qtyEditable = qtySetting.quantityEditable && !bundleLinkedDid;
                         return (
-                          <div key={dotPath} style={{ display: 'grid', gridTemplateColumns: '2.4fr 60px 90px 90px 90px 70px', padding: '8px 18px', borderBottom: '1px solid ' + BORDER, alignItems: 'center', background: hasQty ? ACCENT_SOFT : SURFACE, transition: 'background 0.15s' }}>
+                          <div key={dotPath} style={{ display: 'grid', gridTemplateColumns: '2.4fr 60px 90px 90px 90px 90px 70px', padding: '8px 18px', borderBottom: '1px solid ' + BORDER, alignItems: 'center', background: hasQty ? ACCENT_SOFT : SURFACE, transition: 'background 0.15s' }}>
                             <div>
                               <span style={{ fontSize: 12, fontWeight: 500, color: INK }}>{item.label}</span>
                               <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 8, color: INK3, marginLeft: 6, letterSpacing: '0.04em' }}>{item.unit}</span>
@@ -1253,6 +1284,7 @@ export default function SIPPricingPlaybook() {
                             </div>
                             <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, textAlign: 'right', color: INK2 }}>{formatMYR(lt.internal)}</span>
                             <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, textAlign: 'right', color: INK2 }}>{formatMYR(lt.external)}</span>
+                            <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, textAlign: 'right', color: AMBER, fontWeight: 600 }}>{formatMYR(lineMarkup)}</span>
                             <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, textAlign: 'right', color: ACCENT, fontWeight: 600 }}>{formatMYR(lt.sell)}</span>
                             <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, textAlign: 'right', color: lineMargin >= marginPct ? GREEN : RED, fontWeight: 500 }}>{lt.sell > 0 ? lineMargin.toFixed(1) + '%' : '\u2014'}</span>
                           </div>
@@ -1261,11 +1293,12 @@ export default function SIPPricingPlaybook() {
                     </React.Fragment>
                   ))}
                   {/* Grand total */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '2.4fr 60px 90px 90px 90px 70px', padding: '12px 18px', borderTop: '2px solid ' + INK, background: BG }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '2.4fr 60px 90px 90px 90px 90px 70px', padding: '12px 18px', borderTop: '2px solid ' + INK, background: BG }}>
                     <span style={{ fontWeight: 800, fontSize: 14, color: INK }}>Grand Total</span>
                     <span />
                     <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, textAlign: 'right', color: INK, fontWeight: 700 }}>{formatMYR(grand.internal)}</span>
                     <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, textAlign: 'right', color: INK, fontWeight: 700 }}>{formatMYR(grand.external)}</span>
+                    <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, textAlign: 'right', color: AMBER, fontWeight: 700 }}>{formatMYR(grand.margin)}</span>
                     <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13, textAlign: 'right', color: ACCENT, fontWeight: 700 }}>{formatMYR(grand.sell)}</span>
                     <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, textAlign: 'right', color: ACCENT, fontWeight: 700 }}>{grand.sell > 0 ? grand.marginPct.toFixed(1) + '%' : '\u2014'}</span>
                   </div>
@@ -1286,21 +1319,21 @@ export default function SIPPricingPlaybook() {
                     <p style={{ fontWeight: 800, fontSize: 26, color: SURFACE, letterSpacing: '-0.02em', lineHeight: 1, margin: 0 }}>{formatMYR(breakdown.oneTimeSell + breakdown.recurSell)}</p>
                   </div>
                   <div style={{ background: SURFACE, border: '1px solid ' + BORDER, borderRadius: 8, padding: '18px 20px', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
-                    <p style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: INK3, margin: '0 0 4px' }}>Absolute Margin</p>
+                    <p style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: INK3, margin: '0 0 4px' }}>Mark Up Cost</p>
                     <p style={{ fontWeight: 800, fontSize: 26, color: INK, letterSpacing: '-0.02em', lineHeight: 1, margin: 0 }}>{formatMYR(grand.margin)}</p>
-                    <p style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: INK3, margin: '3px 0 0' }}>{grand.marginPct.toFixed(1)}% of sell</p>
+                    <p style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: INK3, margin: '3px 0 0' }}>{grand.marginPct.toFixed(1)}% of estimated cost</p>
                   </div>
                 </div>
 
                 {/* Manifesto */}
                 <div style={{ background: INK, borderRadius: 8, padding: '20px 24px', marginTop: 14, display: 'grid', gridTemplateColumns: '1fr auto', gap: 16 }}>
                   <div>
-                    <h3 style={{ fontWeight: 800, fontSize: 20, color: SURFACE, letterSpacing: '-0.02em', margin: 0, lineHeight: 1.15 }}>Margin at {marginPct}% target</h3>
-                    <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.6)', lineHeight: 1.6, margin: '8px 0 0' }}>Sell = (Internal + External) &divide; (1 &minus; Margin%). Every line item preserves your target.</p>
+                    <h3 style={{ fontWeight: 800, fontSize: 20, color: SURFACE, letterSpacing: '-0.02em', margin: 0, lineHeight: 1.15 }}>Internal cost and mark up cost</h3>
+                    <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.6)', lineHeight: 1.6, margin: '8px 0 0' }}>Estimated cost = Internal cost + External cost + Mark up cost. The mark up cost is calculated from the target margin percentage.</p>
                   </div>
                   <div style={{ textAlign: 'right' }}>
                     <div style={{ fontWeight: 800, fontSize: 38, color: SURFACE, lineHeight: 1, letterSpacing: '-0.02em' }}>{formatMYR(grand.margin)}</div>
-                    <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: 'rgba(255,255,255,0.5)', letterSpacing: '0.1em', textTransform: 'uppercase', marginTop: 4 }}>Absolute Margin &middot; {grand.marginPct.toFixed(1)}%</div>
+                    <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: 'rgba(255,255,255,0.5)', letterSpacing: '0.1em', textTransform: 'uppercase', marginTop: 4 }}>Mark Up Cost &middot; {grand.marginPct.toFixed(1)}%</div>
                   </div>
                 </div>
               </div>
