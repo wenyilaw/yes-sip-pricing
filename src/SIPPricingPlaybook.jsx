@@ -755,16 +755,19 @@ export default function SIPPricingPlaybook() {
     return [rule.didItem, 'numbers.didMobile', 'numbers.numberActivation'].filter(Boolean);
   };
 
+  const getAutoLinkedChannelQtyItems = () => ['sipTrunk.monthlyAccess'];
+
   const getActiveItems = () => {
     const baseItems = isCustomScenario ? Object.keys(customItems).filter(k => customItems[k]) : (scenarioObj ? scenarioObj.items : []);
     const addOnItems = isCustomScenario ? [] : selectedAddOnScenarios.flatMap(sc => sc.items || []);
     const rule = getActiveBundleRule();
     const merged = [...baseItems, ...addOnItems];
 
-    // Auto-include Local DID, Mobile DID, and Number Activation when the selected scenario has SIP channels.
-    // Default rule: 1 channel = 1 DID. These quantities are auto-filled but still editable by user.
+    // Auto-include Local DID, Mobile DID, Number Activation and SIP Trunk Monthly Access when SIP channels are selected.
+    // Default DID rule: 1 channel = 1 DID. Monthly Access follows the channel quantity 1:1.
+    // These quantities are auto-filled but still editable by user.
     if (rule.enabled && merged.includes(rule.channelItem)) {
-      getAutoLinkedDidItems().forEach(path => {
+      [...getAutoLinkedDidItems(), ...getAutoLinkedChannelQtyItems()].forEach(path => {
         if (path && !merged.includes(path)) merged.push(path);
       });
     }
@@ -813,6 +816,16 @@ export default function SIPPricingPlaybook() {
       return getBaseQty(rule.channelItem) * (Number(rule.didPerChannel) || 1);
     }
 
+    // SIP Trunk Monthly Access follows SIP Channel quantity 1:1 by default, but remains editable.
+    if (
+      rule.enabled &&
+      getAutoLinkedChannelQtyItems().includes(dotPath) &&
+      qtyInputs[dotPath] === undefined &&
+      hasChannelItem
+    ) {
+      return getBaseQty(rule.channelItem);
+    }
+
     return getBaseQty(dotPath);
   };
 
@@ -820,9 +833,10 @@ export default function SIPPricingPlaybook() {
     const rule = getActiveBundleRule();
     const setting = getScenarioItemSetting(dotPath);
     const autoLinkedDid = isBundleDidItem(dotPath);
+    const autoLinkedChannelQty = getAutoLinkedChannelQtyItems().includes(dotPath);
 
-    // Auto-linked DID items are still editable by user even if previous scenario settings locked them.
-    if (!autoLinkedDid && !setting.quantityEditable) return;
+    // Auto-linked DID items and SIP Trunk Monthly Access are still editable by user even if previous scenario settings locked them.
+    if (!autoLinkedDid && !autoLinkedChannelQty && !setting.quantityEditable) return;
 
     const minQty = Number(setting.minQty) || 0;
     const maxQty = Number(setting.maxQty) || 9999;
@@ -837,6 +851,9 @@ export default function SIPPricingPlaybook() {
         const linkedQty = nextQty * (Number(rule.didPerChannel) || 1);
         getAutoLinkedDidItems().forEach(path => {
           if (path) updated[path] = linkedQty;
+        });
+        getAutoLinkedChannelQtyItems().forEach(path => {
+          if (path) updated[path] = nextQty;
         });
       }
 
