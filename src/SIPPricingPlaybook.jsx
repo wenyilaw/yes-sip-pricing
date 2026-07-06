@@ -242,6 +242,14 @@ const catOrder = ['sipTrunk', 'channels', 'numbers', 'integration', 'cloudPBX', 
 
 const unitOptions = ['one-time', 'per month', 'per trunk/month', 'per link/month', 'per channel/month', 'per number/month', 'per number/one-time', 'per user/month', 'per unit/month', 'per day', 'per session', 'per site/one-time', 'per minute', 'per message', 'included/month'];
 
+const moveArrayItem = (arr, fromIndex, toIndex) => {
+  if (toIndex < 0 || toIndex >= arr.length) return arr;
+  const updated = [...arr];
+  const [moved] = updated.splice(fromIndex, 1);
+  updated.splice(toIndex, 0, moved);
+  return updated;
+};
+
 const COMBINED_DID_ITEM = 'virtual.didCombined';
 const DID_COMPONENT_ITEMS = ['numbers.didLocal', 'numbers.didMobile'];
 const isDidComponentItem = (dotPath = '') => DID_COMPONENT_ITEMS.includes(dotPath);
@@ -628,6 +636,23 @@ export default function SIPPricingPlaybook() {
     }));
   };
 
+  const moveScenarioItem = (dotPath, direction) => {
+  setScenarioForm(prev => {
+    const items = prev.items || [];
+    const index = items.indexOf(dotPath);
+    if (index === -1) return prev;
+
+    return {
+      ...prev,
+      items: moveArrayItem(items, index, index + direction)
+    };
+  });
+};
+
+const setScenarioItemMandatory = (dotPath, mandatory) => {
+  updateScenarioItemSetting(dotPath, 'mandatory', mandatory);
+};
+  
   const toggleAddOnScenario = (scenarioId) => {
     setSelectedAddOns(prev => prev.includes(scenarioId) ? prev.filter(id => id !== scenarioId) : [...prev, scenarioId]);
   };
