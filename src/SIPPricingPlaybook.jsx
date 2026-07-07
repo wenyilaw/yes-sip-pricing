@@ -637,22 +637,21 @@ export default function SIPPricingPlaybook() {
   };
 
   const moveScenarioItem = (dotPath, direction) => {
-  setScenarioForm(prev => {
-    const items = prev.items || [];
-    const index = items.indexOf(dotPath);
-    if (index === -1) return prev;
+    setScenarioForm(prev => {
+      const items = prev.items || [];
+      const index = items.indexOf(dotPath);
+      if (index === -1) return prev;
+      return {
+        ...prev,
+        items: moveArrayItem(items, index, index + direction),
+      };
+    });
+  };
 
-    return {
-      ...prev,
-      items: moveArrayItem(items, index, index + direction)
-    };
-  });
-};
+  const setScenarioItemMandatory = (dotPath, mandatory) => {
+    updateScenarioItemSetting(dotPath, 'mandatory', mandatory);
+  };
 
-const setScenarioItemMandatory = (dotPath, mandatory) => {
-  updateScenarioItemSetting(dotPath, 'mandatory', mandatory);
-};
-  
   const toggleAddOnScenario = (scenarioId) => {
     setSelectedAddOns(prev => prev.includes(scenarioId) ? prev.filter(id => id !== scenarioId) : [...prev, scenarioId]);
   };
@@ -819,7 +818,27 @@ const setScenarioItemMandatory = (dotPath, mandatory) => {
     const activeDids = rawItems.filter(isDidComponentItem);
     const itemsWithoutDidComponents = rawItems.filter(item => !isDidComponentItem(item));
     if (activeDids.length > 0) itemsWithoutDidComponents.push(COMBINED_DID_ITEM);
-    return Array.from(new Set(itemsWithoutDidComponents));
+
+    const orderedItems = Array.from(new Set(itemsWithoutDidComponents));
+    const sourceOrder = isCustomScenario
+      ? orderedItems
+      : [scenarioObj, ...selectedAddOnScenarios]
+          .filter(Boolean)
+          .flatMap(sc => sc.items || []);
+
+    orderedItems.sort((a, b) => {
+      const aSetting = getScenarioItemSetting(a);
+      const bSetting = getScenarioItemSetting(b);
+
+      if (aSetting.mandatory && !bSetting.mandatory) return -1;
+      if (!aSetting.mandatory && bSetting.mandatory) return 1;
+
+      const ai = sourceOrder.indexOf(a);
+      const bi = sourceOrder.indexOf(b);
+      return (ai === -1 ? 9999 : ai) - (bi === -1 ? 9999 : bi);
+    });
+
+    return orderedItems;
   };
 
   const getActiveLineGroups = () => {
@@ -1853,6 +1872,63 @@ const setScenarioItemMandatory = (dotPath, mandatory) => {
                 <div style={{ borderTop: '1px solid ' + BORDER, paddingTop: 14 }}>
                   <p style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: INK3, margin: '0 0 10px' }}>Included Cost Items ({(scenarioForm.items || []).length})</p>
                   <p style={{ fontSize: 12, color: INK3, lineHeight: 1.5, margin: '0 0 12px' }}>For each selected item, admin can define default quantity, whether sales can edit quantity, min/max quantity, and mandatory flag.</p>
+
+                  <div style={{ background: ACCENT_SOFT, border: '1px solid ' + ACCENT + '33', borderRadius: 8, padding: '10px 12px', marginBottom: 12 }}>
+                    <p style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase', color: ACCENT, margin: '0 0 4px' }}>Sequence Control</p>
+                    <p style={{ fontSize: 12, color: INK3, margin: 0, lineHeight: 1.45 }}>Use the Mandatory / Optional panels below to move selected items up or down. This order is used in Sales Calculator and Estimated Cost export.</p>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
+                    {[
+                      { title: 'Mandatory Items', mandatory: true, tone: ACCENT },
+                      { title: 'Optional Items', mandatory: false, tone: INK3 },
+                    ].map(group => {
+                      const selectedItems = (scenarioForm.items || []).filter(dotPath => {
+                        const setting = (scenarioForm.itemSettings || {})[dotPath] || { mandatory: false };
+                        return !!setting.mandatory === group.mandatory;
+                      });
+
+                      return (
+                        <div key={group.title} style={{ border: '1px solid ' + BORDER, borderRadius: 10, background: BG, padding: '12px 14px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                            <p style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase', color: group.tone, margin: 0 }}>{group.title}</p>
+                            <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: INK3 }}>{selectedItems.length} item{selectedItems.length === 1 ? '' : 's'}</span>
+                          </div>
+                          <p style={{ fontSize: 11, color: INK3, margin: '0 0 10px', lineHeight: 1.45 }}>Sequence shown here is reflected in Sales Calculator.</p>
+
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                            {selectedItems.length === 0 && (
+                              <div style={{ fontSize: 12, color: INK3, padding: '8px 10px', border: '1px dashed ' + BORDER, borderRadius: 8, background: SURFACE }}>No {group.mandatory ? 'mandatory' : 'optional'} items selected.</div>
+                            )}
+
+                            {selectedItems.map((dotPath) => {
+                              const parts = dotPath.split('.');
+                              const item = dotPath === COMBINED_DID_ITEM ? getDisplayCostItem(dotPath) : getCostItem(costDB, dotPath);
+                              const setting = (scenarioForm.itemSettings || {})[dotPath] || { mandatory: false };
+                              const itemIndex = (scenarioForm.items || []).indexOf(dotPath);
+
+                              return (
+                                <div key={dotPath} style={{ display: 'grid', gridTemplateColumns: 'auto auto 1fr 112px', gap: 6, alignItems: 'center', padding: '7px 8px', background: SURFACE, border: '1px solid ' + BORDER, borderRadius: 8 }}>
+                                  <button disabled={itemIndex <= 0} onClick={() => moveScenarioItem(dotPath, -1)} style={{ fontSize: 11, fontWeight: 700, padding: '4px 7px', border: '1px solid ' + BORDER, borderRadius: 6, background: BG, cursor: itemIndex <= 0 ? 'not-allowed' : 'pointer' }}>↑</button>
+                                  <button disabled={itemIndex >= (scenarioForm.items || []).length - 1} onClick={() => moveScenarioItem(dotPath, 1)} style={{ fontSize: 11, fontWeight: 700, padding: '4px 7px', border: '1px solid ' + BORDER, borderRadius: 6, background: BG, cursor: itemIndex >= (scenarioForm.items || []).length - 1 ? 'not-allowed' : 'pointer' }}>↓</button>
+                                  <div style={{ minWidth: 0 }}>
+                                    <div style={{ fontSize: 12, fontWeight: 700, color: INK, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item?.label || dotPath}</div>
+                                    <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: INK3 }}>{parts[0]}.{parts[1]}</div>
+                                  </div>
+                                  <select value={setting.mandatory ? 'mandatory' : 'optional'} onChange={e => setScenarioItemMandatory(dotPath, e.target.value === 'mandatory')} style={{ width: '100%', padding: '5px', fontSize: 11, border: '1.5px solid ' + BORDER, borderRadius: 6, background: SURFACE }}>
+                                    <option value="mandatory">Mandatory</option>
+                                    <option value="optional">Optional</option>
+                                  </select>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <p style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: INK3, margin: '0 0 10px' }}>Add / Remove Items</p>
                   {catOrder.filter(cat => costDB[cat]).map(cat => (
                     <div key={cat} style={{ marginBottom: 12 }}>
                       <p style={{ fontSize: 12, fontWeight: 700, color: INK, margin: '0 0 6px' }}>{catLabels[cat] || cat}</p>
