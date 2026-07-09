@@ -130,6 +130,12 @@ const DEFAULT_SCENARIOS = [
     items: ['sipTrunk.setupFee', 'sipTrunk.monthlyAccess', 'sipTrunk.redundantLinkSetup', 'sipTrunk.redundantLinkMonthly', 'channels.perChannelMonthly', 'numbers.didLocal', 'numbers.numberActivation', 'integration.certifiedPBXSetup', 'integration.sipTestingCertified', 'professionalServices.siteSurvey', 'professionalServices.installationService', 'professionalServices.projectManagement'],
   },
   {
+    id: 'managed-ippbx', scenarioType: 'managed', name: 'Managed IP-PBX',
+    desc: 'YES-sourced and managed on-premise IP-PBX deployment for internal YTL subsidiary use only.',
+    icon: Server, color: ACCENT, colorSoft: ACCENT_SOFT,
+    items: ['sipTrunk.setupFee', 'sipTrunk.monthlyAccess', 'channels.perChannelMonthly', 'numbers.didLocal', 'numbers.numberActivation', 'cloudPBX.cloudPBXSetup', 'cloudPBX.cloudPBXIntegration', 'professionalServices.projectManagement', 'professionalServices.supportPremium'],
+  },
+  {
     id: 'cloud-pbx-partner', scenarioType: 'managed', name: 'Partner Cloud PBX + SIP Trunk',
     desc: "Utilising a partner's cloud PBX platform (white-label UCaaS). Per-user seat model with SIP trunk backhaul.",
     icon: Globe, color: '#0891B2', colorSoft: '#ECFEFF',
@@ -242,14 +248,6 @@ const catOrder = ['sipTrunk', 'channels', 'numbers', 'integration', 'cloudPBX', 
 
 const unitOptions = ['one-time', 'per month', 'per trunk/month', 'per link/month', 'per channel/month', 'per number/month', 'per number/one-time', 'per user/month', 'per unit/month', 'per day', 'per session', 'per site/one-time', 'per minute', 'per message', 'included/month'];
 
-const moveArrayItem = (arr, fromIndex, toIndex) => {
-  if (toIndex < 0 || toIndex >= arr.length) return arr;
-  const updated = [...arr];
-  const [moved] = updated.splice(fromIndex, 1);
-  updated.splice(toIndex, 0, moved);
-  return updated;
-};
-
 const COMBINED_DID_ITEM = 'virtual.didCombined';
 const DID_COMPONENT_ITEMS = ['numbers.didLocal', 'numbers.didMobile'];
 const isDidComponentItem = (dotPath = '') => DID_COMPONENT_ITEMS.includes(dotPath);
@@ -319,8 +317,14 @@ export default function SIPPricingPlaybook() {
   const [scenarios, setScenarios] = useState(() => {
     try {
       const saved = localStorage.getItem('sipScenarios_v3');
-      const base = saved ? JSON.parse(saved) : DEFAULT_SCENARIOS;
-      return base.map((sc, idx) => normaliseScenario(sanitizeScenario(sc), DEFAULT_SCENARIOS[idx] || {}));
+      const savedScenarios = saved ? JSON.parse(saved) : null;
+      const base = Array.isArray(savedScenarios) ? savedScenarios : DEFAULT_SCENARIOS;
+      // Merge newly added built-in scenarios into existing browser-saved scenarios after upgrades.
+      const merged = [
+        ...base,
+        ...DEFAULT_SCENARIOS.filter(def => !base.some(sc => sc.id === def.id)),
+      ];
+      return merged.map(sc => normaliseScenario(sanitizeScenario(sc), DEFAULT_SCENARIOS.find(def => def.id === sc.id) || {}));
     } catch (e) { return DEFAULT_SCENARIOS.map(sc => normaliseScenario(sanitizeScenario(sc))); }
   });
   const [scenarioSections, setScenarioSections] = useState(() => {
@@ -370,7 +374,8 @@ export default function SIPPricingPlaybook() {
   const [dbSearch, setDbSearch] = useState('');
 
   // ─── CALCULATOR STATE ───────────────────────────────────
-  const [activeTab, setActiveTab] = useState('sales');
+  const [activeTab, setActiveTab] = useState('readiness');
+  const [readiness, setReadiness] = useState({ customerType: '', hasPbx: '', isCertified: '', pbxType: '', needManaged: '', deploymentPreference: '' });
   const [selectedScenario, setSelectedScenario] = useState(null);
   const [selectedAddOns, setSelectedAddOns] = useState([]);
   const [customItems, setCustomItems] = useState({});
@@ -636,22 +641,6 @@ export default function SIPPricingPlaybook() {
     }));
   };
 
-  const moveScenarioItem = (dotPath, direction) => {
-    setScenarioForm(prev => {
-      const items = prev.items || [];
-      const index = items.indexOf(dotPath);
-      if (index === -1) return prev;
-      return {
-        ...prev,
-        items: moveArrayItem(items, index, index + direction),
-      };
-    });
-  };
-
-  const setScenarioItemMandatory = (dotPath, mandatory) => {
-    updateScenarioItemSetting(dotPath, 'mandatory', mandatory);
-  };
-
   const toggleAddOnScenario = (scenarioId) => {
     setSelectedAddOns(prev => prev.includes(scenarioId) ? prev.filter(id => id !== scenarioId) : [...prev, scenarioId]);
   };
@@ -818,27 +807,7 @@ export default function SIPPricingPlaybook() {
     const activeDids = rawItems.filter(isDidComponentItem);
     const itemsWithoutDidComponents = rawItems.filter(item => !isDidComponentItem(item));
     if (activeDids.length > 0) itemsWithoutDidComponents.push(COMBINED_DID_ITEM);
-
-    const orderedItems = Array.from(new Set(itemsWithoutDidComponents));
-    const sourceOrder = isCustomScenario
-      ? orderedItems
-      : [scenarioObj, ...selectedAddOnScenarios]
-          .filter(Boolean)
-          .flatMap(sc => sc.items || []);
-
-    orderedItems.sort((a, b) => {
-      const aSetting = getScenarioItemSetting(a);
-      const bSetting = getScenarioItemSetting(b);
-
-      if (aSetting.mandatory && !bSetting.mandatory) return -1;
-      if (!aSetting.mandatory && bSetting.mandatory) return 1;
-
-      const ai = sourceOrder.indexOf(a);
-      const bi = sourceOrder.indexOf(b);
-      return (ai === -1 ? 9999 : ai) - (bi === -1 ? 9999 : bi);
-    });
-
-    return orderedItems;
+    return Array.from(new Set(itemsWithoutDidComponents));
   };
 
   const getActiveLineGroups = () => {
@@ -1218,6 +1187,7 @@ export default function SIPPricingPlaybook() {
   // MAIN APP
   // ═══════════════════════════════════════════════════════════
   const tabs = [
+    { id: 'readiness', label: 'Pre-Requisite Checklist', icon: CheckCircle, roles: ['admin', 'editor', 'sales'] },
     { id: 'sales', label: 'Sales Calculator', icon: Calculator, roles: ['admin', 'editor', 'sales'] },
     { id: 'engineering', label: 'Cost Database', icon: Settings, roles: ['admin', 'editor'] },
     { id: 'scenarios', label: 'Scenarios', icon: Shield, roles: ['admin'] },
@@ -1230,6 +1200,88 @@ export default function SIPPricingPlaybook() {
     ...DEFAULT_BUNDLE_RULES.channelDidLink,
     ...((bundleRules && bundleRules.channelDidLink) || {}),
   };
+
+  const scenarioNameToId = {
+    certified: 'new-certified-ippbx',
+    nonCertified: 'new-noncertified-ippbx',
+    legacy: 'legacy-pbx-mediagw',
+    managed: 'managed-ippbx',
+    cloud: 'cloud-pbx-partner',
+  };
+
+  const setReadinessField = (field, value) => {
+    setReadiness(prev => {
+      const next = { ...prev, [field]: value };
+      if (field === 'customerType') {
+        next.hasPbx = ''; next.isCertified = ''; next.pbxType = ''; next.needManaged = ''; next.deploymentPreference = '';
+      }
+      if (field === 'hasPbx') {
+        next.isCertified = ''; next.pbxType = ''; next.needManaged = ''; next.deploymentPreference = '';
+      }
+      if (field === 'isCertified') next.pbxType = '';
+      if (field === 'needManaged') next.deploymentPreference = '';
+      return next;
+    });
+  };
+
+  const getReadinessResult = () => {
+    const r = readiness;
+    if (!r.customerType) return { status: 'question', message: 'Select customer type to begin.' };
+    if (!r.hasPbx) return { status: 'question', message: 'Confirm whether customer has an existing PBX.' };
+
+    if (r.customerType === 'internal') {
+      if (r.hasPbx === 'yes') {
+        if (!r.isCertified) return { status: 'question', message: 'Confirm whether the PBX is certified.' };
+        if (r.isCertified === 'yes') return { status: 'ready', scenarioId: scenarioNameToId.certified, scenarioLabel: 'New SIP Trunk + Certified IP-PBX', reason: ['Internal customer', 'Customer has own PBX', 'PBX is certified'] };
+        if (!r.pbxType) return { status: 'question', message: 'Select whether the PBX is IP-PBX or Legacy PBX.' };
+        if (r.pbxType === 'ip') return { status: 'ready', scenarioId: scenarioNameToId.nonCertified, scenarioLabel: 'New SIP Trunk + Non-Certified IP-PBX', reason: ['Internal customer', 'Customer has own PBX', 'PBX is not certified', 'PBX type is IP-PBX'] };
+        return { status: 'ready', scenarioId: scenarioNameToId.legacy, scenarioLabel: 'Legacy PBX + Media Gateway', reason: ['Internal customer', 'Customer has own PBX', 'PBX is legacy'] };
+      }
+
+      if (!r.needManaged) return { status: 'question', message: 'Confirm whether YES needs to source and manage the PBX.' };
+      if (r.needManaged === 'no') return { status: 'stop', title: 'Deployment cannot proceed', message: 'Customer requires a PBX solution before SIP Trunk deployment.' };
+      if (!r.deploymentPreference) return { status: 'question', message: 'Select preferred deployment: on-premise or cloud.' };
+      if (r.deploymentPreference === 'onprem') return { status: 'ready', scenarioId: scenarioNameToId.managed, scenarioLabel: 'Managed IP-PBX', reason: ['Internal customer', 'No existing PBX', 'YES to source and manage PBX', 'On-premise deployment'] };
+      return { status: 'ready', scenarioId: scenarioNameToId.cloud, scenarioLabel: 'Cloud PBX', reason: ['Internal customer', 'No existing PBX', 'YES to source and manage PBX', 'Cloud deployment'] };
+    }
+
+    if (r.customerType === 'external') {
+      if (r.hasPbx === 'no') return { status: 'stop', title: 'Deployment cannot proceed', message: 'Please get PBX solution from supplier before proceeding.' };
+      if (!r.isCertified) return { status: 'question', message: 'Confirm whether the PBX is certified.' };
+      if (r.isCertified === 'yes') return { status: 'ready', scenarioId: scenarioNameToId.certified, scenarioLabel: 'New SIP Trunk + Certified IP-PBX', reason: ['External customer', 'Customer has own PBX', 'PBX is certified'] };
+      if (!r.pbxType) return { status: 'question', message: 'Select whether the PBX is IP-PBX or Legacy PBX.' };
+      if (r.pbxType === 'ip') return { status: 'ready', scenarioId: scenarioNameToId.nonCertified, scenarioLabel: 'New SIP Trunk + Non-Certified IP-PBX', reason: ['External customer', 'Customer has own PBX', 'PBX is not certified', 'PBX type is IP-PBX'] };
+      return { status: 'ready', scenarioId: scenarioNameToId.legacy, scenarioLabel: 'Legacy PBX + Media Gateway', reason: ['External customer', 'Customer has own PBX', 'PBX is legacy'] };
+    }
+
+    return { status: 'question', message: 'Complete the checklist.' };
+  };
+
+  const readinessResult = getReadinessResult();
+  const readinessScenario = readinessResult.scenarioId ? scenarios.find(sc => sc.id === readinessResult.scenarioId) : null;
+
+  const useReadinessScenario = () => {
+    if (!readinessResult.scenarioId) return;
+    setSelectedScenario(readinessResult.scenarioId);
+    setSelectedAddOns([]);
+    setQtyInputs({});
+    setCustomItems({});
+    setActiveTab('sales');
+  };
+
+  const resetReadiness = () => {
+    setReadiness({ customerType: '', hasPbx: '', isCertified: '', pbxType: '', needManaged: '', deploymentPreference: '' });
+  };
+
+  const ReadinessChoice = ({ label, active, onClick, hint }) => (
+    <button onClick={onClick} style={{ textAlign: 'left', background: active ? ACCENT_SOFT : SURFACE, border: active ? '2px solid ' + ACCENT : '1.5px solid ' + BORDER, borderRadius: 10, padding: '14px 16px', cursor: 'pointer', minHeight: 72 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <span style={{ width: 18, height: 18, borderRadius: 999, border: active ? '6px solid ' + ACCENT : '2px solid ' + BORDER, display: 'inline-block', background: SURFACE }} />
+        <span style={{ fontWeight: 800, color: INK, fontSize: 14 }}>{label}</span>
+      </div>
+      {hint && <p style={{ fontSize: 12, color: INK3, margin: '8px 0 0 28px', lineHeight: 1.45 }}>{hint}</p>}
+    </button>
+  );
 
   return (
     <div style={{ minHeight: '100vh', background: BG, fontFamily: "Inter, system-ui, sans-serif", color: INK2 }}>
@@ -1304,6 +1356,128 @@ export default function SIPPricingPlaybook() {
       </div>
 
       <div style={{ maxWidth: 1120, margin: '0 auto', padding: '20px 16px' }}>
+
+        {/* ═══════════════════════════════════════════════════
+            TAB 0: DEPLOYMENT PRE-REQUISITE CHECKLIST
+            ═══════════════════════════════════════════════════ */}
+        {activeTab === 'readiness' && (
+          <div className="fade-in">
+            <div style={{ borderBottom: '2px solid ' + INK, paddingBottom: 10, marginBottom: 20, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: 12 }}>
+              <div>
+                <p style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: ACCENT, letterSpacing: '0.1em', textTransform: 'uppercase', fontWeight: 600, margin: 0 }}>00 / Deployment Readiness</p>
+                <h2 style={{ fontWeight: 800, fontSize: 30, color: INK, letterSpacing: '-0.025em', lineHeight: 1.05, margin: '6px 0 0' }}>Pre-requisite checklist</h2>
+              </div>
+              <p style={{ fontSize: 13, color: INK3, maxWidth: 360, textAlign: 'right', lineHeight: 1.55, margin: 0 }}>Answer the questions to recommend the correct deployment scenario before using Sales Calculator.</p>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.8fr', gap: 18, alignItems: 'start' }}>
+              <div style={{ display: 'grid', gap: 14 }}>
+                <div style={{ background: SURFACE, border: '1px solid ' + BORDER, borderRadius: 12, padding: 18, boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+                  <p style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fontWeight: 700, color: ACCENT, letterSpacing: '0.1em', textTransform: 'uppercase', margin: '0 0 10px' }}>Step 1</p>
+                  <h3 style={{ fontSize: 18, fontWeight: 800, color: INK, margin: '0 0 12px' }}>Customer type</h3>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                    <ReadinessChoice label="Internal (YTL Subsidiary)" active={readiness.customerType === 'internal'} onClick={() => setReadinessField('customerType', 'internal')} hint="Managed IP-PBX / Cloud PBX scenarios are allowed." />
+                    <ReadinessChoice label="External Customer" active={readiness.customerType === 'external'} onClick={() => setReadinessField('customerType', 'external')} hint="Managed IP-PBX scenarios are hidden / not applicable." />
+                  </div>
+                </div>
+
+                {readiness.customerType && (
+                  <div style={{ background: SURFACE, border: '1px solid ' + BORDER, borderRadius: 12, padding: 18, boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+                    <p style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fontWeight: 700, color: ACCENT, letterSpacing: '0.1em', textTransform: 'uppercase', margin: '0 0 10px' }}>Step 2</p>
+                    <h3 style={{ fontSize: 18, fontWeight: 800, color: INK, margin: '0 0 12px' }}>Does customer have own PBX?</h3>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                      <ReadinessChoice label="Yes" active={readiness.hasPbx === 'yes'} onClick={() => setReadinessField('hasPbx', 'yes')} />
+                      <ReadinessChoice label="No" active={readiness.hasPbx === 'no'} onClick={() => setReadinessField('hasPbx', 'no')} />
+                    </div>
+                  </div>
+                )}
+
+                {readiness.customerType === 'internal' && readiness.hasPbx === 'no' && (
+                  <div style={{ background: SURFACE, border: '1px solid ' + BORDER, borderRadius: 12, padding: 18, boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+                    <p style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fontWeight: 700, color: ACCENT, letterSpacing: '0.1em', textTransform: 'uppercase', margin: '0 0 10px' }}>Step 3</p>
+                    <h3 style={{ fontSize: 18, fontWeight: 800, color: INK, margin: '0 0 12px' }}>Need YES to source and manage PBX?</h3>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                      <ReadinessChoice label="Yes" active={readiness.needManaged === 'yes'} onClick={() => setReadinessField('needManaged', 'yes')} />
+                      <ReadinessChoice label="No" active={readiness.needManaged === 'no'} onClick={() => setReadinessField('needManaged', 'no')} />
+                    </div>
+                  </div>
+                )}
+
+                {readiness.customerType === 'internal' && readiness.hasPbx === 'no' && readiness.needManaged === 'yes' && (
+                  <div style={{ background: SURFACE, border: '1px solid ' + BORDER, borderRadius: 12, padding: 18, boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+                    <p style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fontWeight: 700, color: ACCENT, letterSpacing: '0.1em', textTransform: 'uppercase', margin: '0 0 10px' }}>Step 4</p>
+                    <h3 style={{ fontSize: 18, fontWeight: 800, color: INK, margin: '0 0 12px' }}>Prefer On-premise or Cloud?</h3>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                      <ReadinessChoice label="On-premise" active={readiness.deploymentPreference === 'onprem'} onClick={() => setReadinessField('deploymentPreference', 'onprem')} />
+                      <ReadinessChoice label="Cloud" active={readiness.deploymentPreference === 'cloud'} onClick={() => setReadinessField('deploymentPreference', 'cloud')} />
+                    </div>
+                  </div>
+                )}
+
+                {readiness.hasPbx === 'yes' && (
+                  <div style={{ background: SURFACE, border: '1px solid ' + BORDER, borderRadius: 12, padding: 18, boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+                    <p style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fontWeight: 700, color: ACCENT, letterSpacing: '0.1em', textTransform: 'uppercase', margin: '0 0 10px' }}>Step 3</p>
+                    <h3 style={{ fontSize: 18, fontWeight: 800, color: INK, margin: '0 0 12px' }}>Is the PBX certified?</h3>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                      <ReadinessChoice label="Yes" active={readiness.isCertified === 'yes'} onClick={() => setReadinessField('isCertified', 'yes')} />
+                      <ReadinessChoice label="No" active={readiness.isCertified === 'no'} onClick={() => setReadinessField('isCertified', 'no')} />
+                    </div>
+                  </div>
+                )}
+
+                {readiness.hasPbx === 'yes' && readiness.isCertified === 'no' && (
+                  <div style={{ background: SURFACE, border: '1px solid ' + BORDER, borderRadius: 12, padding: 18, boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+                    <p style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fontWeight: 700, color: ACCENT, letterSpacing: '0.1em', textTransform: 'uppercase', margin: '0 0 10px' }}>Step 4</p>
+                    <h3 style={{ fontSize: 18, fontWeight: 800, color: INK, margin: '0 0 12px' }}>PBX is Legacy PBX or IP-PBX?</h3>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                      <ReadinessChoice label="IP-PBX" active={readiness.pbxType === 'ip'} onClick={() => setReadinessField('pbxType', 'ip')} />
+                      <ReadinessChoice label="Legacy PBX" active={readiness.pbxType === 'legacy'} onClick={() => setReadinessField('pbxType', 'legacy')} />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div style={{ background: readinessResult.status === 'stop' ? RED_SOFT : readinessResult.status === 'ready' ? GREEN_SOFT : ACCENT_SOFT, border: '1px solid ' + (readinessResult.status === 'stop' ? '#FECACA' : readinessResult.status === 'ready' ? '#BBF7D0' : ACCENT + '33'), borderRadius: 12, padding: 18, position: 'sticky', top: 118 }}>
+                <p style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase', color: readinessResult.status === 'stop' ? RED : readinessResult.status === 'ready' ? GREEN : ACCENT, margin: '0 0 10px' }}>Readiness Result</p>
+
+                {readinessResult.status === 'question' && (
+                  <>
+                    <h3 style={{ fontSize: 18, fontWeight: 800, color: INK, margin: '0 0 8px' }}>Complete checklist</h3>
+                    <p style={{ fontSize: 13, color: INK3, margin: 0, lineHeight: 1.6 }}>{readinessResult.message}</p>
+                  </>
+                )}
+
+                {readinessResult.status === 'stop' && (
+                  <>
+                    <h3 style={{ fontSize: 18, fontWeight: 800, color: RED, margin: '0 0 8px' }}>{readinessResult.title}</h3>
+                    <p style={{ fontSize: 13, color: INK2, margin: 0, lineHeight: 1.6 }}>{readinessResult.message}</p>
+                  </>
+                )}
+
+                {readinessResult.status === 'ready' && (
+                  <>
+                    <h3 style={{ fontSize: 18, fontWeight: 800, color: GREEN, margin: '0 0 8px' }}>Recommended Scenario</h3>
+                    <div style={{ background: SURFACE, border: '1px solid ' + BORDER, borderRadius: 10, padding: 14, marginBottom: 12 }}>
+                      <p style={{ fontSize: 18, fontWeight: 900, color: INK, margin: 0, letterSpacing: '-0.02em' }}>{readinessScenario?.name || readinessResult.scenarioLabel}</p>
+                      {readinessScenario?.desc && <p style={{ fontSize: 12, color: INK3, lineHeight: 1.5, margin: '8px 0 0' }}>{readinessScenario.desc}</p>}
+                    </div>
+                    <div style={{ marginBottom: 14 }}>
+                      <p style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: INK3, letterSpacing: '0.08em', textTransform: 'uppercase', margin: '0 0 6px', fontWeight: 700 }}>Reason</p>
+                      {(readinessResult.reason || []).map(reason => (
+                        <div key={reason} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: INK2, marginBottom: 4 }}>
+                          <CheckCircle style={{ width: 13, height: 13, color: GREEN }} /> {reason}
+                        </div>
+                      ))}
+                    </div>
+                    <button onClick={useReadinessScenario} style={{ width: '100%', background: ACCENT, color: SURFACE, border: 'none', borderRadius: 8, padding: '10px 14px', cursor: 'pointer', fontWeight: 800, fontSize: 13 }}>Start Sales Calculator</button>
+                  </>
+                )}
+
+                <button onClick={resetReadiness} style={{ width: '100%', marginTop: 10, background: SURFACE, color: INK3, border: '1.5px solid ' + BORDER, borderRadius: 8, padding: '8px 12px', cursor: 'pointer', fontWeight: 700, fontSize: 12 }}>Reset Checklist</button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* ═══════════════════════════════════════════════════
             TAB 1: SALES CALCULATOR
@@ -1872,63 +2046,6 @@ export default function SIPPricingPlaybook() {
                 <div style={{ borderTop: '1px solid ' + BORDER, paddingTop: 14 }}>
                   <p style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: INK3, margin: '0 0 10px' }}>Included Cost Items ({(scenarioForm.items || []).length})</p>
                   <p style={{ fontSize: 12, color: INK3, lineHeight: 1.5, margin: '0 0 12px' }}>For each selected item, admin can define default quantity, whether sales can edit quantity, min/max quantity, and mandatory flag.</p>
-
-                  <div style={{ background: ACCENT_SOFT, border: '1px solid ' + ACCENT + '33', borderRadius: 8, padding: '10px 12px', marginBottom: 12 }}>
-                    <p style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase', color: ACCENT, margin: '0 0 4px' }}>Sequence Control</p>
-                    <p style={{ fontSize: 12, color: INK3, margin: 0, lineHeight: 1.45 }}>Use the Mandatory / Optional panels below to move selected items up or down. This order is used in Sales Calculator and Estimated Cost export.</p>
-                  </div>
-
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
-                    {[
-                      { title: 'Mandatory Items', mandatory: true, tone: ACCENT },
-                      { title: 'Optional Items', mandatory: false, tone: INK3 },
-                    ].map(group => {
-                      const selectedItems = (scenarioForm.items || []).filter(dotPath => {
-                        const setting = (scenarioForm.itemSettings || {})[dotPath] || { mandatory: false };
-                        return !!setting.mandatory === group.mandatory;
-                      });
-
-                      return (
-                        <div key={group.title} style={{ border: '1px solid ' + BORDER, borderRadius: 10, background: BG, padding: '12px 14px' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                            <p style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase', color: group.tone, margin: 0 }}>{group.title}</p>
-                            <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: INK3 }}>{selectedItems.length} item{selectedItems.length === 1 ? '' : 's'}</span>
-                          </div>
-                          <p style={{ fontSize: 11, color: INK3, margin: '0 0 10px', lineHeight: 1.45 }}>Sequence shown here is reflected in Sales Calculator.</p>
-
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                            {selectedItems.length === 0 && (
-                              <div style={{ fontSize: 12, color: INK3, padding: '8px 10px', border: '1px dashed ' + BORDER, borderRadius: 8, background: SURFACE }}>No {group.mandatory ? 'mandatory' : 'optional'} items selected.</div>
-                            )}
-
-                            {selectedItems.map((dotPath) => {
-                              const parts = dotPath.split('.');
-                              const item = dotPath === COMBINED_DID_ITEM ? getDisplayCostItem(dotPath) : getCostItem(costDB, dotPath);
-                              const setting = (scenarioForm.itemSettings || {})[dotPath] || { mandatory: false };
-                              const itemIndex = (scenarioForm.items || []).indexOf(dotPath);
-
-                              return (
-                                <div key={dotPath} style={{ display: 'grid', gridTemplateColumns: 'auto auto 1fr 112px', gap: 6, alignItems: 'center', padding: '7px 8px', background: SURFACE, border: '1px solid ' + BORDER, borderRadius: 8 }}>
-                                  <button disabled={itemIndex <= 0} onClick={() => moveScenarioItem(dotPath, -1)} style={{ fontSize: 11, fontWeight: 700, padding: '4px 7px', border: '1px solid ' + BORDER, borderRadius: 6, background: BG, cursor: itemIndex <= 0 ? 'not-allowed' : 'pointer' }}>↑</button>
-                                  <button disabled={itemIndex >= (scenarioForm.items || []).length - 1} onClick={() => moveScenarioItem(dotPath, 1)} style={{ fontSize: 11, fontWeight: 700, padding: '4px 7px', border: '1px solid ' + BORDER, borderRadius: 6, background: BG, cursor: itemIndex >= (scenarioForm.items || []).length - 1 ? 'not-allowed' : 'pointer' }}>↓</button>
-                                  <div style={{ minWidth: 0 }}>
-                                    <div style={{ fontSize: 12, fontWeight: 700, color: INK, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item?.label || dotPath}</div>
-                                    <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: INK3 }}>{parts[0]}.{parts[1]}</div>
-                                  </div>
-                                  <select value={setting.mandatory ? 'mandatory' : 'optional'} onChange={e => setScenarioItemMandatory(dotPath, e.target.value === 'mandatory')} style={{ width: '100%', padding: '5px', fontSize: 11, border: '1.5px solid ' + BORDER, borderRadius: 6, background: SURFACE }}>
-                                    <option value="mandatory">Mandatory</option>
-                                    <option value="optional">Optional</option>
-                                  </select>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  <p style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: INK3, margin: '0 0 10px' }}>Add / Remove Items</p>
                   {catOrder.filter(cat => costDB[cat]).map(cat => (
                     <div key={cat} style={{ marginBottom: 12 }}>
                       <p style={{ fontSize: 12, fontWeight: 700, color: INK, margin: '0 0 6px' }}>{catLabels[cat] || cat}</p>
