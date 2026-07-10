@@ -376,6 +376,7 @@ export default function SIPPricingPlaybook() {
   // ─── CALCULATOR STATE ───────────────────────────────────
   const [activeTab, setActiveTab] = useState('readiness');
   const [readiness, setReadiness] = useState({ customerType: '', hasPbx: '', isCertified: '', pbxType: '', needManaged: '', deploymentPreference: '' });
+  const [readinessCompleted, setReadinessCompleted] = useState(false);
   const [selectedScenario, setSelectedScenario] = useState(null);
   const [selectedAddOns, setSelectedAddOns] = useState([]);
   const [customItems, setCustomItems] = useState({});
@@ -435,6 +436,9 @@ export default function SIPPricingPlaybook() {
     }
     if (user) {
       setCurrentUser({ username: user.username, role: user.role, displayName: user.displayName });
+      // Sales users must complete the Pre-Requisite Checklist before opening the calculator.
+      setActiveTab(user.role === 'sales' ? 'readiness' : 'sales');
+      if (user.role === 'sales') setReadinessCompleted(false);
       setLoginError('');
       setLoginForm({ username: '', password: '' });
     } else {
@@ -444,7 +448,8 @@ export default function SIPPricingPlaybook() {
 
   const handleLogout = () => {
     setCurrentUser(null);
-    setActiveTab('sales');
+    setActiveTab('readiness');
+    setReadinessCompleted(false);
   };
 
   const canEditDB = currentUser && (currentUser.role === 'admin' || currentUser.role === 'editor');
@@ -1251,7 +1256,7 @@ export default function SIPPricingPlaybook() {
   // ═══════════════════════════════════════════════════════════
   const tabs = [
     { id: 'readiness', label: 'Pre-Requisite Checklist', icon: CheckCircle, roles: ['admin', 'editor', 'sales'] },
-    { id: 'sales', label: 'Sales Calculator', icon: Calculator, roles: ['admin', 'editor', 'sales'] },
+    { id: 'sales', label: 'Sales Calculator', icon: Calculator, roles: ['admin', 'editor', 'sales'], requiresReadiness: true },
     { id: 'engineering', label: 'Cost Database', icon: Settings, roles: ['admin', 'editor'] },
     { id: 'scenarios', label: 'Scenarios', icon: Shield, roles: ['admin'] },
     { id: 'quotes', label: 'Estimated Cost', icon: FileText, roles: ['admin', 'editor', 'sales'] },
@@ -1329,11 +1334,14 @@ export default function SIPPricingPlaybook() {
     setSelectedAddOns([]);
     setQtyInputs({});
     setCustomItems({});
+    setReadinessCompleted(true);
     setActiveTab('sales');
   };
 
   const resetReadiness = () => {
     setReadiness({ customerType: '', hasPbx: '', isCertified: '', pbxType: '', needManaged: '', deploymentPreference: '' });
+    setReadinessCompleted(false);
+    if (currentUser?.role === 'sales') setActiveTab('readiness');
   };
 
   const ReadinessChoice = ({ label, active, onClick, hint }) => (
@@ -1402,20 +1410,30 @@ export default function SIPPricingPlaybook() {
 
       {/* ─── TAB NAV ────────────────────────────────────── */}
       <div style={{ display: 'flex', background: SURFACE, borderBottom: '2px solid ' + INK }}>
-        {tabs.map(tab => (
-          <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-            style={{
-              flex: 1, padding: '12px 10px', fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 600, letterSpacing: '0.005em',
-              border: 'none', cursor: 'pointer', transition: 'all 0.15s ease-out',
-              background: activeTab === tab.id ? SURFACE : BG,
-              color: activeTab === tab.id ? ACCENT : INK3,
-              borderBottom: activeTab === tab.id ? '3px solid ' + ACCENT : '3px solid transparent',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-            }}>
-            <SI c={tab.icon} style={{ width: 14, height: 14 }} />
-            <span className="hidden sm:inline">{tab.label}</span>
-          </button>
-        ))}
+        {tabs.map(tab => {
+          const isLocked = currentUser.role === 'sales' && tab.requiresReadiness && !readinessCompleted;
+          return (
+            <button key={tab.id}
+              disabled={isLocked}
+              title={isLocked ? 'Complete the Pre-Requisite Checklist first' : tab.label}
+              onClick={() => {
+                if (isLocked) return;
+                setActiveTab(tab.id);
+              }}
+              style={{
+                flex: 1, padding: '12px 10px', fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 600, letterSpacing: '0.005em',
+                border: 'none', cursor: isLocked ? 'not-allowed' : 'pointer', transition: 'all 0.15s ease-out',
+                opacity: isLocked ? 0.45 : 1,
+                background: activeTab === tab.id ? SURFACE : BG,
+                color: activeTab === tab.id ? ACCENT : INK3,
+                borderBottom: activeTab === tab.id ? '3px solid ' + ACCENT : '3px solid transparent',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+              }}>
+              <SI c={tab.icon} style={{ width: 14, height: 14 }} />
+              <span className="hidden sm:inline">{tab.label}{isLocked ? ' 🔒' : ''}</span>
+            </button>
+          );
+        })}
       </div>
 
       <div style={{ maxWidth: 1120, margin: '0 auto', padding: '20px 16px' }}>
