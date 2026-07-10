@@ -391,6 +391,8 @@ export default function SIPPricingPlaybook() {
   // ─── USER MGMT STATE ────────────────────────────────────
   const [showAddUser, setShowAddUser] = useState(false);
   const [newUserForm, setNewUserForm] = useState({ username: '', password: '', role: 'sales', displayName: '' });
+  const [editingUserForm, setEditingUserForm] = useState(null);
+  const [userSearch, setUserSearch] = useState('');
 
   // ─── UI STATE ───────────────────────────────────────────
   const [savedNotice, setSavedNotice] = useState(false);
@@ -427,6 +429,10 @@ export default function SIPPricingPlaybook() {
   // ─── AUTH FUNCTIONS ─────────────────────────────────────
   const handleLogin = () => {
     const user = users.find(u => u.username === loginForm.username && u.password === loginForm.password);
+    if (user && user.disabled) {
+      setLoginError('This user account has been disabled');
+      return;
+    }
     if (user) {
       setCurrentUser({ username: user.username, role: user.role, displayName: user.displayName });
       setLoginError('');
@@ -447,12 +453,69 @@ export default function SIPPricingPlaybook() {
   // ─── USER MANAGEMENT ────────────────────────────────────
   const addUser = () => {
     if (!newUserForm.username || !newUserForm.password || !newUserForm.displayName) return;
-    if (users.find(u => u.username === newUserForm.username)) return;
-    setUsers(prev => [...prev, { ...newUserForm }]);
+    const safeUsername = newUserForm.username.trim();
+    if (!safeUsername) return;
+    if (users.find(u => u.username.toLowerCase() === safeUsername.toLowerCase())) return;
+    setUsers(prev => [...prev, { ...newUserForm, username: safeUsername, disabled: false }]);
     setNewUserForm({ username: '', password: '', role: 'sales', displayName: '' });
     setShowAddUser(false);
     showSaved();
   };
+
+  const removeUser = (username) => {
+    if (username === 'admin') {
+      alert('Default Administrator cannot be removed.');
+      return;
+    }
+    if (currentUser && username === currentUser.username) {
+      alert('You cannot remove the currently logged-in account.');
+      return;
+    }
+    setUsers(prev => prev.filter(u => u.username !== username));
+    if (editingUserForm?.username === username) setEditingUserForm(null);
+    showSaved();
+  };
+
+  const startEditUser = (user) => {
+    setEditingUserForm({ ...user, password: user.password || '', disabled: !!user.disabled });
+    setShowAddUser(false);
+  };
+
+  const saveEditedUser = () => {
+    if (!editingUserForm || !editingUserForm.displayName || !editingUserForm.password) return;
+    setUsers(prev => prev.map(u => u.username === editingUserForm.username ? { ...u, ...editingUserForm } : u));
+    if (currentUser?.username === editingUserForm.username) {
+      setCurrentUser(prev => prev ? { ...prev, displayName: editingUserForm.displayName, role: editingUserForm.role } : prev);
+    }
+    setEditingUserForm(null);
+    showSaved();
+  };
+
+  const resetUserPassword = (username) => {
+    const newPassword = window.prompt('Enter new password for ' + username + ':');
+    if (!newPassword) return;
+    setUsers(prev => prev.map(u => u.username === username ? { ...u, password: newPassword } : u));
+    showSaved();
+  };
+
+  const toggleUserDisabled = (username) => {
+    if (username === 'admin') {
+      alert('Default Administrator cannot be disabled.');
+      return;
+    }
+    if (currentUser && username === currentUser.username) {
+      alert('You cannot disable the currently logged-in account.');
+      return;
+    }
+    setUsers(prev => prev.map(u => u.username === username ? { ...u, disabled: !u.disabled } : u));
+    showSaved();
+  };
+
+  const visibleUsers = users.filter(u => {
+    const q = userSearch.trim().toLowerCase();
+    if (!q) return true;
+    return [u.displayName, u.username, u.role].some(v => String(v || '').toLowerCase().includes(q));
+  });
 
   // ─── SCENARIO MANAGEMENT ───────────────────────────────
   const getScenarioSectionLabel = (sectionId) => (scenarioSections.find(section => section.id === sectionId)?.label || sectionId || 'Unassigned');
@@ -2266,15 +2329,58 @@ export default function SIPPricingPlaybook() {
               </div>
             )}
 
+            {/* Edit user form */}
+            {editingUserForm && (
+              <div style={{ background: '#F8FAFC', border: '1.5px solid ' + ACCENT + '40', borderRadius: 8, padding: '16px 20px', marginBottom: 14 }}>
+                <p style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: ACCENT, margin: '0 0 10px' }}>Edit User</p>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: 8, alignItems: 'end' }}>
+                  <div>
+                    <label style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: INK3, display: 'block', marginBottom: 4 }}>Display Name</label>
+                    <input type="text" value={editingUserForm.displayName} onChange={e => setEditingUserForm(p => ({ ...p, displayName: e.target.value }))}
+                      style={{ width: '100%', padding: '7px 10px', fontFamily: "'Inter', sans-serif", fontSize: 12, border: '1.5px solid ' + BORDER, background: SURFACE, borderRadius: 8, color: INK, boxSizing: 'border-box' }} />
+                  </div>
+                  <div>
+                    <label style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: INK3, display: 'block', marginBottom: 4 }}>Username</label>
+                    <input type="text" value={editingUserForm.username} disabled
+                      style={{ width: '100%', padding: '7px 10px', fontFamily: "'JetBrains Mono', monospace", fontSize: 12, border: '1.5px solid ' + BORDER, background: BG, borderRadius: 8, color: INK3, boxSizing: 'border-box' }} />
+                  </div>
+                  <div>
+                    <label style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: INK3, display: 'block', marginBottom: 4 }}>Password</label>
+                    <input type="text" value={editingUserForm.password} onChange={e => setEditingUserForm(p => ({ ...p, password: e.target.value }))}
+                      style={{ width: '100%', padding: '7px 10px', fontFamily: "'JetBrains Mono', monospace", fontSize: 12, border: '1.5px solid ' + BORDER, background: SURFACE, borderRadius: 8, color: INK, boxSizing: 'border-box' }} />
+                  </div>
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'end' }}>
+                    <select value={editingUserForm.role} disabled={editingUserForm.username === 'admin'} onChange={e => setEditingUserForm(p => ({ ...p, role: e.target.value }))}
+                      style={{ padding: '7px 10px', fontFamily: "'Inter', sans-serif", fontSize: 12, border: '1.5px solid ' + BORDER, background: editingUserForm.username === 'admin' ? BG : SURFACE, borderRadius: 8, color: INK }}>
+                      <option value="sales">Sales</option>
+                      <option value="editor">Engineering</option>
+                      <option value="admin">Admin</option>
+                    </select>
+                    <button onClick={saveEditedUser} style={{ background: GREEN, color: SURFACE, border: 'none', borderRadius: 8, padding: '7px 14px', cursor: 'pointer', fontWeight: 600, fontSize: 12 }}>Save</button>
+                    <button onClick={() => setEditingUserForm(null)} style={{ background: SURFACE, color: INK3, border: '1.5px solid ' + BORDER, borderRadius: 8, padding: '7px 14px', cursor: 'pointer', fontWeight: 600, fontSize: 12 }}>Cancel</button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div style={{ background: SURFACE, border: '1px solid ' + BORDER, borderRadius: 8, padding: '12px 14px', marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+              <div style={{ position: 'relative', minWidth: 260, flex: '1 1 260px' }}>
+                <Search style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', width: 14, height: 14, color: INK3 }} />
+                <input type="text" value={userSearch} onChange={e => setUserSearch(e.target.value)} placeholder="Search user, username or role"
+                  style={{ width: '100%', padding: '8px 10px 8px 32px', fontFamily: "'Inter', sans-serif", fontSize: 12, border: '1.5px solid ' + BORDER, background: SURFACE, borderRadius: 8, color: INK, boxSizing: 'border-box' }} />
+              </div>
+              <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: INK3 }}>{visibleUsers.length} of {users.length} users</span>
+            </div>
+
             {/* User list */}
             <div style={{ background: SURFACE, border: '1px solid ' + BORDER, borderRadius: 8, overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '40px 1.5fr 1fr 1fr 80px', padding: '8px 18px', borderBottom: '2px solid ' + INK, fontFamily: "'JetBrains Mono', monospace", fontSize: 9, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: INK3, background: BG }}>
-                <span /><span>User</span><span>Username</span><span>Role</span><span />
+              <div style={{ display: 'grid', gridTemplateColumns: '40px 1.4fr 1fr 1fr 90px 150px', padding: '8px 18px', borderBottom: '2px solid ' + INK, fontFamily: "'JetBrains Mono', monospace", fontSize: 9, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: INK3, background: BG }}>
+                <span /><span>User</span><span>Username</span><span>Role</span><span>Status</span><span style={{ textAlign: 'right' }}>Actions</span>
               </div>
-              {users.map(u => (
-                <div key={u.username} style={{ display: 'grid', gridTemplateColumns: '40px 1.5fr 1fr 1fr 80px', padding: '10px 18px', borderBottom: '1px solid ' + BORDER, alignItems: 'center', background: u.username === currentUser.username ? ACCENT_SOFT : SURFACE }}>
+              {visibleUsers.map(u => (
+                <div key={u.username} style={{ display: 'grid', gridTemplateColumns: '40px 1.4fr 1fr 1fr 90px 150px', padding: '10px 18px', borderBottom: '1px solid ' + BORDER, alignItems: 'center', background: u.username === currentUser.username ? ACCENT_SOFT : SURFACE, opacity: u.disabled ? 0.65 : 1 }}>
                   <div style={{ width: 30, height: 30, borderRadius: 8, background: ROLE_COLORS[u.role] || ACCENT, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <span style={{ fontSize: 12, fontWeight: 700, color: SURFACE }}>{u.displayName.charAt(0).toUpperCase()}</span>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: SURFACE }}>{(u.displayName || u.username).charAt(0).toUpperCase()}</span>
                   </div>
                   <span style={{ fontSize: 13, fontWeight: 600, color: INK }}>{u.displayName}</span>
                   <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: INK2 }}>{u.username}</span>
@@ -2282,15 +2388,32 @@ export default function SIPPricingPlaybook() {
                     <div style={{ width: 7, height: 7, borderRadius: 4, background: ROLE_COLORS[u.role] }} />
                     <span style={{ fontSize: 12, fontWeight: 600, color: ROLE_COLORS[u.role] }}>{ROLE_LABELS[u.role]}</span>
                   </div>
-                  <div style={{ textAlign: 'right' }}>
+                  <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: u.disabled ? RED : GREEN, fontWeight: 700, letterSpacing: '0.06em' }}>
+                    {u.disabled ? 'DISABLED' : u.username === currentUser.username ? 'ACTIVE / YOU' : 'ACTIVE'}
+                  </span>
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
+                    <button onClick={() => startEditUser(u)} title="Edit user"
+                      style={{ background: SURFACE, border: '1.5px solid ' + BORDER, borderRadius: 6, padding: '5px 7px', cursor: 'pointer', color: INK3 }}>
+                      <Edit style={{ width: 12, height: 12 }} />
+                    </button>
+                    <button onClick={() => resetUserPassword(u.username)} title="Reset password"
+                      style={{ background: SURFACE, border: '1.5px solid ' + BORDER, borderRadius: 6, padding: '5px 7px', cursor: 'pointer', color: ACCENT }}>
+                      <Key style={{ width: 12, height: 12 }} />
+                    </button>
+                    {u.username !== 'admin' && u.username !== currentUser.username && (
+                      <button onClick={() => toggleUserDisabled(u.username)} title={u.disabled ? 'Enable user' : 'Disable user'}
+                        style={{ background: u.disabled ? GREEN_SOFT : AMBER + '18', border: '1.5px solid ' + (u.disabled ? '#BBF7D0' : '#FDE68A'), borderRadius: 6, padding: '5px 7px', cursor: 'pointer', color: u.disabled ? GREEN : AMBER }}>
+                        <Eye style={{ width: 12, height: 12 }} />
+                      </button>
+                    )}
                     {u.username !== 'admin' && u.username !== currentUser.username && (
                       <button onClick={() => setConfirmAction({ title: 'Remove User', message: 'Remove "' + u.displayName + '" from the system? They will no longer be able to sign in.', confirmLabel: 'Remove User', onConfirm: () => { removeUser(u.username); setConfirmAction(null); } })}
-                        style={{ background: SURFACE, border: '1.5px solid #FECACA', borderRadius: 6, padding: '4px 8px', cursor: 'pointer', color: RED, fontSize: 11, fontWeight: 600 }}>
+                        style={{ background: RED_SOFT, border: '1.5px solid #FECACA', borderRadius: 6, padding: '5px 7px', cursor: 'pointer', color: RED }}>
                         <Trash2 style={{ width: 12, height: 12 }} />
                       </button>
                     )}
                     {u.username === currentUser.username && (
-                      <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: INK3, letterSpacing: '0.06em' }}>YOU</span>
+                      <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: INK3, letterSpacing: '0.06em', alignSelf: 'center' }}>YOU</span>
                     )}
                   </div>
                 </div>
