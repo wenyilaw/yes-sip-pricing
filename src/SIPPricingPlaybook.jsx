@@ -168,6 +168,42 @@ const DEFAULT_SCENARIO_SECTIONS = [
 ];
 
 
+const DEFAULT_WIZARD_QUESTIONS = [
+  { id: 'customerType', label: 'Customer type', options: [
+    { value: 'internal', label: 'Internal (YTL Subsidiary)', hint: 'Managed IP-PBX / Cloud PBX scenarios are allowed.' },
+    { value: 'external', label: 'External Customer', hint: 'Managed IP-PBX scenarios are not applicable.' },
+  ], showWhen: {} },
+  { id: 'hasPbx', label: 'Does customer have own PBX?', options: [
+    { value: 'yes', label: 'Yes' }, { value: 'no', label: 'No' },
+  ], showWhen: { customerType: ['internal', 'external'] } },
+  { id: 'needManaged', label: 'Need YES to source and manage PBX?', options: [
+    { value: 'yes', label: 'Yes' }, { value: 'no', label: 'No' },
+  ], showWhen: { customerType: ['internal'], hasPbx: ['no'] } },
+  { id: 'deploymentPreference', label: 'Prefer On-premise or Cloud?', options: [
+    { value: 'onprem', label: 'On-premise' }, { value: 'cloud', label: 'Cloud' },
+  ], showWhen: { customerType: ['internal'], hasPbx: ['no'], needManaged: ['yes'] } },
+  { id: 'isCertified', label: 'Is the PBX certified?', options: [
+    { value: 'yes', label: 'Yes' }, { value: 'no', label: 'No' },
+  ], showWhen: { hasPbx: ['yes'] } },
+  { id: 'pbxType', label: 'PBX is Legacy PBX or IP-PBX?', options: [
+    { value: 'ip', label: 'IP-PBX' }, { value: 'legacy', label: 'Legacy PBX' },
+  ], showWhen: { hasPbx: ['yes'], isCertified: ['no'] } },
+];
+
+const DEFAULT_WIZARD_RULES = [
+  { id: 'internal-certified', conditions: { customerType: 'internal', hasPbx: 'yes', isCertified: 'yes' }, status: 'ready', scenarioId: 'new-certified-ippbx', message: 'Internal customer with certified PBX.' },
+  { id: 'internal-noncertified', conditions: { customerType: 'internal', hasPbx: 'yes', isCertified: 'no', pbxType: 'ip' }, status: 'ready', scenarioId: 'new-noncertified-ippbx', message: 'Internal customer with non-certified IP-PBX.' },
+  { id: 'internal-legacy', conditions: { customerType: 'internal', hasPbx: 'yes', isCertified: 'no', pbxType: 'legacy' }, status: 'ready', scenarioId: 'legacy-pbx-mediagw', message: 'Internal customer with legacy PBX.' },
+  { id: 'internal-managed', conditions: { customerType: 'internal', hasPbx: 'no', needManaged: 'yes', deploymentPreference: 'onprem' }, status: 'ready', scenarioId: 'managed-ippbx', message: 'Internal customer requires managed on-premise PBX.' },
+  { id: 'internal-cloud', conditions: { customerType: 'internal', hasPbx: 'no', needManaged: 'yes', deploymentPreference: 'cloud' }, status: 'ready', scenarioId: 'cloud-pbx-partner', message: 'Internal customer requires cloud PBX.' },
+  { id: 'internal-no-pbx', conditions: { customerType: 'internal', hasPbx: 'no', needManaged: 'no' }, status: 'stop', title: 'Deployment cannot proceed', message: 'Customer requires a PBX solution before SIP Trunk deployment.' },
+  { id: 'external-certified', conditions: { customerType: 'external', hasPbx: 'yes', isCertified: 'yes' }, status: 'ready', scenarioId: 'new-certified-ippbx', message: 'External customer with certified PBX.' },
+  { id: 'external-noncertified', conditions: { customerType: 'external', hasPbx: 'yes', isCertified: 'no', pbxType: 'ip' }, status: 'ready', scenarioId: 'new-noncertified-ippbx', message: 'External customer with non-certified IP-PBX.' },
+  { id: 'external-legacy', conditions: { customerType: 'external', hasPbx: 'yes', isCertified: 'no', pbxType: 'legacy' }, status: 'ready', scenarioId: 'legacy-pbx-mediagw', message: 'External customer with legacy PBX.' },
+  { id: 'external-no-pbx', conditions: { customerType: 'external', hasPbx: 'no' }, status: 'stop', title: 'Deployment cannot proceed', message: 'Please get PBX solution from supplier before proceeding.' },
+];
+
+
 const LINE_ITEM_SECTION_OPTIONS = [
   'Installation Charges (OTC)',
   'Managed Services',
@@ -375,8 +411,16 @@ export default function SIPPricingPlaybook() {
 
   // ─── CALCULATOR STATE ───────────────────────────────────
   const [activeTab, setActiveTab] = useState('readiness');
-  const [readiness, setReadiness] = useState({ customerType: '', hasPbx: '', isCertified: '', pbxType: '', needManaged: '', deploymentPreference: '' });
+  const [readiness, setReadiness] = useState({});
   const [readinessCompleted, setReadinessCompleted] = useState(false);
+  const [wizardQuestions, setWizardQuestions] = useState(() => {
+    try { const saved = localStorage.getItem('sipWizardQuestions_v1'); return saved ? JSON.parse(saved) : DEFAULT_WIZARD_QUESTIONS; } catch (e) { return DEFAULT_WIZARD_QUESTIONS; }
+  });
+  const [wizardRules, setWizardRules] = useState(() => {
+    try { const saved = localStorage.getItem('sipWizardRules_v1'); return saved ? JSON.parse(saved) : DEFAULT_WIZARD_RULES; } catch (e) { return DEFAULT_WIZARD_RULES; }
+  });
+  const [wizardQuestionForm, setWizardQuestionForm] = useState(null);
+  const [wizardRuleForm, setWizardRuleForm] = useState(null);
   const [selectedScenario, setSelectedScenario] = useState(null);
   const [selectedAddOns, setSelectedAddOns] = useState([]);
   const [customItems, setCustomItems] = useState({});
@@ -421,6 +465,14 @@ export default function SIPPricingPlaybook() {
   useEffect(() => {
     try { localStorage.setItem('sipUsers_v3', JSON.stringify(users)); } catch (e) { /* ignore */ }
   }, [users]);
+
+  useEffect(() => {
+    try { localStorage.setItem('sipWizardQuestions_v1', JSON.stringify(wizardQuestions)); } catch (e) { /* ignore */ }
+  }, [wizardQuestions]);
+
+  useEffect(() => {
+    try { localStorage.setItem('sipWizardRules_v1', JSON.stringify(wizardRules)); } catch (e) { /* ignore */ }
+  }, [wizardRules]);
   // ─── CALLBACKS ──────────────────────────────────────────
   const showSaved = useCallback(() => {
     setSavedNotice(true);
@@ -1269,60 +1321,40 @@ export default function SIPPricingPlaybook() {
     ...((bundleRules && bundleRules.channelDidLink) || {}),
   };
 
-  const scenarioNameToId = {
-    certified: 'new-certified-ippbx',
-    nonCertified: 'new-noncertified-ippbx',
-    legacy: 'legacy-pbx-mediagw',
-    managed: 'managed-ippbx',
-    cloud: 'cloud-pbx-partner',
+  const isQuestionVisible = (question, answers = readiness) => {
+    const conditions = question.showWhen || {};
+    return Object.entries(conditions).every(([key, allowed]) => {
+      const values = Array.isArray(allowed) ? allowed : [allowed];
+      return values.includes(answers[key]);
+    });
   };
 
   const setReadinessField = (field, value) => {
     setReadiness(prev => {
       const next = { ...prev, [field]: value };
-      if (field === 'customerType') {
-        next.hasPbx = ''; next.isCertified = ''; next.pbxType = ''; next.needManaged = ''; next.deploymentPreference = '';
-      }
-      if (field === 'hasPbx') {
-        next.isCertified = ''; next.pbxType = ''; next.needManaged = ''; next.deploymentPreference = '';
-      }
-      if (field === 'isCertified') next.pbxType = '';
-      if (field === 'needManaged') next.deploymentPreference = '';
+      const changedIndex = wizardQuestions.findIndex(q => q.id === field);
+      wizardQuestions.slice(changedIndex + 1).forEach(q => { delete next[q.id]; });
       return next;
     });
+    setReadinessCompleted(false);
   };
 
   const getReadinessResult = () => {
-    const r = readiness;
-    if (!r.customerType) return { status: 'question', message: 'Select customer type to begin.' };
-    if (!r.hasPbx) return { status: 'question', message: 'Confirm whether customer has an existing PBX.' };
+    const visibleQuestions = wizardQuestions.filter(q => isQuestionVisible(q));
+    const unanswered = visibleQuestions.find(q => !readiness[q.id]);
+    if (unanswered) return { status: 'question', message: 'Please answer: ' + unanswered.label };
 
-    if (r.customerType === 'internal') {
-      if (r.hasPbx === 'yes') {
-        if (!r.isCertified) return { status: 'question', message: 'Confirm whether the PBX is certified.' };
-        if (r.isCertified === 'yes') return { status: 'ready', scenarioId: scenarioNameToId.certified, scenarioLabel: 'New SIP Trunk + Certified IP-PBX', reason: ['Internal customer', 'Customer has own PBX', 'PBX is certified'] };
-        if (!r.pbxType) return { status: 'question', message: 'Select whether the PBX is IP-PBX or Legacy PBX.' };
-        if (r.pbxType === 'ip') return { status: 'ready', scenarioId: scenarioNameToId.nonCertified, scenarioLabel: 'New SIP Trunk + Non-Certified IP-PBX', reason: ['Internal customer', 'Customer has own PBX', 'PBX is not certified', 'PBX type is IP-PBX'] };
-        return { status: 'ready', scenarioId: scenarioNameToId.legacy, scenarioLabel: 'Legacy PBX + Media Gateway', reason: ['Internal customer', 'Customer has own PBX', 'PBX is legacy'] };
-      }
-
-      if (!r.needManaged) return { status: 'question', message: 'Confirm whether YES needs to source and manage the PBX.' };
-      if (r.needManaged === 'no') return { status: 'stop', title: 'Deployment cannot proceed', message: 'Customer requires a PBX solution before SIP Trunk deployment.' };
-      if (!r.deploymentPreference) return { status: 'question', message: 'Select preferred deployment: on-premise or cloud.' };
-      if (r.deploymentPreference === 'onprem') return { status: 'ready', scenarioId: scenarioNameToId.managed, scenarioLabel: 'Managed IP-PBX', reason: ['Internal customer', 'No existing PBX', 'YES to source and manage PBX', 'On-premise deployment'] };
-      return { status: 'ready', scenarioId: scenarioNameToId.cloud, scenarioLabel: 'Cloud PBX', reason: ['Internal customer', 'No existing PBX', 'YES to source and manage PBX', 'Cloud deployment'] };
-    }
-
-    if (r.customerType === 'external') {
-      if (r.hasPbx === 'no') return { status: 'stop', title: 'Deployment cannot proceed', message: 'Please get PBX solution from supplier before proceeding.' };
-      if (!r.isCertified) return { status: 'question', message: 'Confirm whether the PBX is certified.' };
-      if (r.isCertified === 'yes') return { status: 'ready', scenarioId: scenarioNameToId.certified, scenarioLabel: 'New SIP Trunk + Certified IP-PBX', reason: ['External customer', 'Customer has own PBX', 'PBX is certified'] };
-      if (!r.pbxType) return { status: 'question', message: 'Select whether the PBX is IP-PBX or Legacy PBX.' };
-      if (r.pbxType === 'ip') return { status: 'ready', scenarioId: scenarioNameToId.nonCertified, scenarioLabel: 'New SIP Trunk + Non-Certified IP-PBX', reason: ['External customer', 'Customer has own PBX', 'PBX is not certified', 'PBX type is IP-PBX'] };
-      return { status: 'ready', scenarioId: scenarioNameToId.legacy, scenarioLabel: 'Legacy PBX + Media Gateway', reason: ['External customer', 'Customer has own PBX', 'PBX is legacy'] };
-    }
-
-    return { status: 'question', message: 'Complete the checklist.' };
+    const matchedRule = wizardRules.find(rule => Object.entries(rule.conditions || {}).every(([key, value]) => readiness[key] === value));
+    if (!matchedRule) return { status: 'stop', title: 'No matching deployment path', message: 'No rule matches this answer combination. Please contact the administrator.' };
+    if (matchedRule.status === 'stop') return { status: 'stop', title: matchedRule.title || 'Deployment cannot proceed', message: matchedRule.message || '' };
+    return {
+      status: 'ready', scenarioId: matchedRule.scenarioId, scenarioLabel: scenarios.find(sc => sc.id === matchedRule.scenarioId)?.name || matchedRule.scenarioId,
+      reason: Object.entries(matchedRule.conditions || {}).map(([questionId, answer]) => {
+        const q = wizardQuestions.find(item => item.id === questionId);
+        const option = q?.options?.find(item => item.value === answer);
+        return (q?.label || questionId) + ': ' + (option?.label || answer);
+      })
+    };
   };
 
   const readinessResult = getReadinessResult();
@@ -1331,18 +1363,25 @@ export default function SIPPricingPlaybook() {
   const useReadinessScenario = () => {
     if (!readinessResult.scenarioId) return;
     setSelectedScenario(readinessResult.scenarioId);
-    setSelectedAddOns([]);
-    setQtyInputs({});
-    setCustomItems({});
-    setReadinessCompleted(true);
-    setActiveTab('sales');
+    setSelectedAddOns([]); setQtyInputs({}); setCustomItems({}); setReadinessCompleted(true); setActiveTab('sales');
   };
 
-  const resetReadiness = () => {
-    setReadiness({ customerType: '', hasPbx: '', isCertified: '', pbxType: '', needManaged: '', deploymentPreference: '' });
-    setReadinessCompleted(false);
-    if (currentUser?.role === 'sales') setActiveTab('readiness');
+  const resetReadiness = () => { setReadiness({}); setReadinessCompleted(false); if (currentUser?.role === 'sales') setActiveTab('readiness'); };
+
+  const saveWizardQuestion = () => {
+    if (!wizardQuestionForm?.id?.trim() || !wizardQuestionForm?.label?.trim()) return;
+    const clean = { ...wizardQuestionForm, id: wizardQuestionForm.id.trim(), label: wizardQuestionForm.label.trim(), options: (wizardQuestionForm.options || []).filter(o => o.value && o.label) };
+    setWizardQuestions(prev => prev.some(q => q.id === clean.id) ? prev.map(q => q.id === clean.id ? clean : q) : [...prev, clean]);
+    setWizardQuestionForm(null); showSaved();
   };
+  const deleteWizardQuestion = (id) => { setWizardQuestions(prev => prev.filter(q => q.id !== id)); setWizardRules(prev => prev.map(r => ({ ...r, conditions: Object.fromEntries(Object.entries(r.conditions || {}).filter(([k]) => k !== id)) }))); showSaved(); };
+  const moveWizardQuestion = (id, direction) => setWizardQuestions(prev => { const i=prev.findIndex(q=>q.id===id), j=i+direction; if(i<0||j<0||j>=prev.length)return prev; const a=[...prev]; [a[i],a[j]]=[a[j],a[i]]; return a; });
+  const saveWizardRule = () => {
+    if (!wizardRuleForm?.id?.trim()) return;
+    const clean = { ...wizardRuleForm, id: wizardRuleForm.id.trim(), conditions: Object.fromEntries(Object.entries(wizardRuleForm.conditions || {}).filter(([,v]) => v)) };
+    setWizardRules(prev => prev.some(r => r.id === clean.id) ? prev.map(r => r.id === clean.id ? clean : r) : [...prev, clean]); setWizardRuleForm(null); showSaved();
+  };
+  const resetWizardConfiguration = () => { setWizardQuestions(DEFAULT_WIZARD_QUESTIONS); setWizardRules(DEFAULT_WIZARD_RULES); setWizardQuestionForm(null); setWizardRuleForm(null); resetReadiness(); showSaved(); };
 
   const ReadinessChoice = ({ label, active, onClick, hint }) => (
     <button onClick={onClick} style={{ textAlign: 'left', background: active ? ACCENT_SOFT : SURFACE, border: active ? '2px solid ' + ACCENT : '1.5px solid ' + BORDER, borderRadius: 10, padding: '14px 16px', cursor: 'pointer', minHeight: 72 }}>
@@ -1453,69 +1492,15 @@ export default function SIPPricingPlaybook() {
 
             <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.8fr', gap: 18, alignItems: 'start' }}>
               <div style={{ display: 'grid', gap: 14 }}>
-                <div style={{ background: SURFACE, border: '1px solid ' + BORDER, borderRadius: 12, padding: 18, boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
-                  <p style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fontWeight: 700, color: ACCENT, letterSpacing: '0.1em', textTransform: 'uppercase', margin: '0 0 10px' }}>Step 1</p>
-                  <h3 style={{ fontSize: 18, fontWeight: 800, color: INK, margin: '0 0 12px' }}>Customer type</h3>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                    <ReadinessChoice label="Internal (YTL Subsidiary)" active={readiness.customerType === 'internal'} onClick={() => setReadinessField('customerType', 'internal')} hint="Managed IP-PBX / Cloud PBX scenarios are allowed." />
-                    <ReadinessChoice label="External Customer" active={readiness.customerType === 'external'} onClick={() => setReadinessField('customerType', 'external')} hint="Managed IP-PBX scenarios are hidden / not applicable." />
-                  </div>
-                </div>
-
-                {readiness.customerType && (
-                  <div style={{ background: SURFACE, border: '1px solid ' + BORDER, borderRadius: 12, padding: 18, boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
-                    <p style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fontWeight: 700, color: ACCENT, letterSpacing: '0.1em', textTransform: 'uppercase', margin: '0 0 10px' }}>Step 2</p>
-                    <h3 style={{ fontSize: 18, fontWeight: 800, color: INK, margin: '0 0 12px' }}>Does customer have own PBX?</h3>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                      <ReadinessChoice label="Yes" active={readiness.hasPbx === 'yes'} onClick={() => setReadinessField('hasPbx', 'yes')} />
-                      <ReadinessChoice label="No" active={readiness.hasPbx === 'no'} onClick={() => setReadinessField('hasPbx', 'no')} />
+                {wizardQuestions.filter(q => isQuestionVisible(q)).map((question, index) => (
+                  <div key={question.id} style={{ background: SURFACE, border: '1px solid ' + BORDER, borderRadius: 12, padding: 18, boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+                    <p style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fontWeight: 700, color: ACCENT, letterSpacing: '0.1em', textTransform: 'uppercase', margin: '0 0 10px' }}>Step {index + 1}</p>
+                    <h3 style={{ fontSize: 18, fontWeight: 800, color: INK, margin: '0 0 12px' }}>{question.label}</h3>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(220px,1fr))', gap: 10 }}>
+                      {(question.options || []).map(option => <ReadinessChoice key={option.value} label={option.label} hint={option.hint} active={readiness[question.id] === option.value} onClick={() => setReadinessField(question.id, option.value)} />)}
                     </div>
                   </div>
-                )}
-
-                {readiness.customerType === 'internal' && readiness.hasPbx === 'no' && (
-                  <div style={{ background: SURFACE, border: '1px solid ' + BORDER, borderRadius: 12, padding: 18, boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
-                    <p style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fontWeight: 700, color: ACCENT, letterSpacing: '0.1em', textTransform: 'uppercase', margin: '0 0 10px' }}>Step 3</p>
-                    <h3 style={{ fontSize: 18, fontWeight: 800, color: INK, margin: '0 0 12px' }}>Need YES to source and manage PBX?</h3>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                      <ReadinessChoice label="Yes" active={readiness.needManaged === 'yes'} onClick={() => setReadinessField('needManaged', 'yes')} />
-                      <ReadinessChoice label="No" active={readiness.needManaged === 'no'} onClick={() => setReadinessField('needManaged', 'no')} />
-                    </div>
-                  </div>
-                )}
-
-                {readiness.customerType === 'internal' && readiness.hasPbx === 'no' && readiness.needManaged === 'yes' && (
-                  <div style={{ background: SURFACE, border: '1px solid ' + BORDER, borderRadius: 12, padding: 18, boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
-                    <p style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fontWeight: 700, color: ACCENT, letterSpacing: '0.1em', textTransform: 'uppercase', margin: '0 0 10px' }}>Step 4</p>
-                    <h3 style={{ fontSize: 18, fontWeight: 800, color: INK, margin: '0 0 12px' }}>Prefer On-premise or Cloud?</h3>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                      <ReadinessChoice label="On-premise" active={readiness.deploymentPreference === 'onprem'} onClick={() => setReadinessField('deploymentPreference', 'onprem')} />
-                      <ReadinessChoice label="Cloud" active={readiness.deploymentPreference === 'cloud'} onClick={() => setReadinessField('deploymentPreference', 'cloud')} />
-                    </div>
-                  </div>
-                )}
-
-                {readiness.hasPbx === 'yes' && (
-                  <div style={{ background: SURFACE, border: '1px solid ' + BORDER, borderRadius: 12, padding: 18, boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
-                    <p style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fontWeight: 700, color: ACCENT, letterSpacing: '0.1em', textTransform: 'uppercase', margin: '0 0 10px' }}>Step 3</p>
-                    <h3 style={{ fontSize: 18, fontWeight: 800, color: INK, margin: '0 0 12px' }}>Is the PBX certified?</h3>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                      <ReadinessChoice label="Yes" active={readiness.isCertified === 'yes'} onClick={() => setReadinessField('isCertified', 'yes')} />
-                      <ReadinessChoice label="No" active={readiness.isCertified === 'no'} onClick={() => setReadinessField('isCertified', 'no')} />
-                    </div>
-                  </div>
-                )}
-
-                {readiness.hasPbx === 'yes' && readiness.isCertified === 'no' && (
-                  <div style={{ background: SURFACE, border: '1px solid ' + BORDER, borderRadius: 12, padding: 18, boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
-                    <p style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fontWeight: 700, color: ACCENT, letterSpacing: '0.1em', textTransform: 'uppercase', margin: '0 0 10px' }}>Step 4</p>
-                    <h3 style={{ fontSize: 18, fontWeight: 800, color: INK, margin: '0 0 12px' }}>PBX is Legacy PBX or IP-PBX?</h3>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                      <ReadinessChoice label="IP-PBX" active={readiness.pbxType === 'ip'} onClick={() => setReadinessField('pbxType', 'ip')} />
-                      <ReadinessChoice label="Legacy PBX" active={readiness.pbxType === 'legacy'} onClick={() => setReadinessField('pbxType', 'legacy')} />
-                    </div>
-                  </div>
-                )}
+                ))}
               </div>
 
               <div style={{ background: readinessResult.status === 'stop' ? RED_SOFT : readinessResult.status === 'ready' ? GREEN_SOFT : ACCENT_SOFT, border: '1px solid ' + (readinessResult.status === 'stop' ? '#FECACA' : readinessResult.status === 'ready' ? '#BBF7D0' : ACCENT + '33'), borderRadius: 12, padding: 18, position: 'sticky', top: 118 }}>
@@ -2021,6 +2006,22 @@ export default function SIPPricingPlaybook() {
 
             <div style={{ background: GREEN_SOFT, border: '1px solid #BBF7D0', borderRadius: 8, padding: '10px 14px', marginBottom: 14 }}>
               <p style={{ fontSize: 12, color: GREEN, fontWeight: 600, margin: 0 }}>Saved scenario changes are applied immediately to the Sales Calculator. No code change or page refresh is required.</p>
+            </div>
+
+            <div style={{ background: SURFACE, border: '1px solid ' + BORDER, borderRadius: 8, padding: '16px 18px', marginBottom: 16 }}>
+              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:10, marginBottom:12 }}>
+                <div><p style={{ fontFamily:"'JetBrains Mono', monospace", fontSize:10, fontWeight:800, color:ACCENT, margin:0, textTransform:'uppercase' }}>Deployment Readiness Wizard</p><p style={{fontSize:12,color:INK3,margin:'4px 0 0'}}>Create questions, answer options and rules that map answer combinations to scenarios.</p></div>
+                <div style={{display:'flex',gap:6}}><button onClick={()=>setWizardQuestionForm({id:'question-'+Date.now().toString(36),label:'',options:[{value:'yes',label:'Yes'},{value:'no',label:'No'}],showWhen:{}})} style={{background:ACCENT,color:SURFACE,border:'none',borderRadius:7,padding:'7px 10px',fontWeight:700,cursor:'pointer'}}>Add Question</button><button onClick={()=>setWizardRuleForm({id:'rule-'+Date.now().toString(36),conditions:{},status:'ready',scenarioId:scenarios[0]?.id||'',title:'',message:''})} style={{background:ACCENT2,color:SURFACE,border:'none',borderRadius:7,padding:'7px 10px',fontWeight:700,cursor:'pointer'}}>Add Rule</button><button onClick={resetWizardConfiguration} style={{background:SURFACE,color:RED,border:'1px solid #FECACA',borderRadius:7,padding:'7px 10px',fontWeight:700,cursor:'pointer'}}>Reset</button></div>
+              </div>
+              {wizardQuestionForm && <div style={{background:BG,border:'1px solid '+BORDER,borderRadius:8,padding:12,marginBottom:12}}>
+                <div style={{display:'grid',gridTemplateColumns:'180px 1fr',gap:8}}><input value={wizardQuestionForm.id} onChange={e=>setWizardQuestionForm(p=>({...p,id:e.target.value}))} placeholder="Question ID" style={{padding:8,border:'1px solid '+BORDER,borderRadius:6}}/><input value={wizardQuestionForm.label} onChange={e=>setWizardQuestionForm(p=>({...p,label:e.target.value}))} placeholder="Question text" style={{padding:8,border:'1px solid '+BORDER,borderRadius:6}}/></div>
+                <p style={{fontSize:11,fontWeight:700,color:INK3}}>Answer Options</p>{(wizardQuestionForm.options||[]).map((o,i)=><div key={i} style={{display:'grid',gridTemplateColumns:'1fr 1.5fr 1.5fr auto',gap:6,marginBottom:6}}><input value={o.value} onChange={e=>setWizardQuestionForm(p=>({...p,options:p.options.map((x,j)=>j===i?{...x,value:e.target.value}:x)}))} placeholder="value"/><input value={o.label} onChange={e=>setWizardQuestionForm(p=>({...p,options:p.options.map((x,j)=>j===i?{...x,label:e.target.value}:x)}))} placeholder="label"/><input value={o.hint||''} onChange={e=>setWizardQuestionForm(p=>({...p,options:p.options.map((x,j)=>j===i?{...x,hint:e.target.value}:x)}))} placeholder="hint (optional)"/><button onClick={()=>setWizardQuestionForm(p=>({...p,options:p.options.filter((_,j)=>j!==i)}))}>×</button></div>)}
+                <button onClick={()=>setWizardQuestionForm(p=>({...p,options:[...(p.options||[]),{value:'',label:''}]}))}>+ Option</button>
+                <p style={{fontSize:11,fontWeight:700,color:INK3}}>Show only when (optional)</p><div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(180px,1fr))',gap:6}}>{wizardQuestions.filter(q=>q.id!==wizardQuestionForm.id).map(q=><select key={q.id} value={(wizardQuestionForm.showWhen?.[q.id]||[])[0]||''} onChange={e=>setWizardQuestionForm(p=>({...p,showWhen:{...(p.showWhen||{}),[q.id]:e.target.value?[e.target.value]:[]}}))}><option value="">{q.label}: Any</option>{q.options.map(o=><option key={o.value} value={o.value}>{q.label}: {o.label}</option>)}</select>)}</div>
+                <div style={{display:'flex',gap:6,marginTop:10}}><button onClick={saveWizardQuestion}>Save Question</button><button onClick={()=>setWizardQuestionForm(null)}>Cancel</button></div>
+              </div>}
+              {wizardRuleForm && <div style={{background:BG,border:'1px solid '+BORDER,borderRadius:8,padding:12,marginBottom:12}}><div style={{display:'grid',gridTemplateColumns:'180px 140px 1fr',gap:8}}><input value={wizardRuleForm.id} onChange={e=>setWizardRuleForm(p=>({...p,id:e.target.value}))} placeholder="Rule ID"/><select value={wizardRuleForm.status} onChange={e=>setWizardRuleForm(p=>({...p,status:e.target.value}))}><option value="ready">Recommend scenario</option><option value="stop">Stop / Not applicable</option></select>{wizardRuleForm.status==='ready'?<select value={wizardRuleForm.scenarioId} onChange={e=>setWizardRuleForm(p=>({...p,scenarioId:e.target.value}))}>{scenarios.map(sc=><option key={sc.id} value={sc.id}>{sc.name}</option>)}</select>:<input value={wizardRuleForm.title||''} onChange={e=>setWizardRuleForm(p=>({...p,title:e.target.value}))} placeholder="Stop title"/>}</div><p style={{fontSize:11,fontWeight:700,color:INK3}}>Conditions</p><div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(180px,1fr))',gap:6}}>{wizardQuestions.map(q=><select key={q.id} value={wizardRuleForm.conditions?.[q.id]||''} onChange={e=>setWizardRuleForm(p=>({...p,conditions:{...(p.conditions||{}),[q.id]:e.target.value}}))}><option value="">{q.label}: Any</option>{q.options.map(o=><option key={o.value} value={o.value}>{q.label}: {o.label}</option>)}</select>)}</div><textarea value={wizardRuleForm.message||''} onChange={e=>setWizardRuleForm(p=>({...p,message:e.target.value}))} placeholder="Result message" style={{width:'100%',marginTop:8,minHeight:55}}/><div style={{display:'flex',gap:6,marginTop:8}}><button onClick={saveWizardRule}>Save Rule</button><button onClick={()=>setWizardRuleForm(null)}>Cancel</button></div></div>}
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}><div><p style={{fontWeight:800,fontSize:12}}>Questions</p>{wizardQuestions.map((q,i)=><div key={q.id} style={{display:'flex',justifyContent:'space-between',gap:6,padding:'7px 0',borderBottom:'1px solid '+BORDER}}><span style={{fontSize:12}}>{i+1}. {q.label}</span><span><button onClick={()=>moveWizardQuestion(q.id,-1)} disabled={i===0}>↑</button><button onClick={()=>moveWizardQuestion(q.id,1)} disabled={i===wizardQuestions.length-1}>↓</button><button onClick={()=>setWizardQuestionForm(JSON.parse(JSON.stringify(q)))}>Edit</button><button onClick={()=>deleteWizardQuestion(q.id)}>Delete</button></span></div>)}</div><div><p style={{fontWeight:800,fontSize:12}}>Rules</p>{wizardRules.map(r=><div key={r.id} style={{display:'flex',justifyContent:'space-between',gap:6,padding:'7px 0',borderBottom:'1px solid '+BORDER}}><span style={{fontSize:12}}>{r.id} → {r.status==='ready'?(scenarios.find(s=>s.id===r.scenarioId)?.name||r.scenarioId):'Stop'}</span><span><button onClick={()=>setWizardRuleForm(JSON.parse(JSON.stringify(r)))}>Edit</button><button onClick={()=>setWizardRules(prev=>prev.filter(x=>x.id!==r.id))}>Delete</button></span></div>)}</div></div>
             </div>
 
             <div style={{ background: SURFACE, border: '1px solid ' + BORDER, borderRadius: 8, padding: '16px 18px', marginBottom: 16, boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
