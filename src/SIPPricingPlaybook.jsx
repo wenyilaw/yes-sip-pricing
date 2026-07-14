@@ -169,26 +169,63 @@ const DEFAULT_SCENARIO_SECTIONS = [
 
 
 const DEFAULT_WIZARD_QUESTIONS = [
-  { id: 'customerType', label: 'Customer type', options: [
-    { value: 'internal', label: 'Internal (YTL Subsidiary)', hint: 'Managed IP-PBX / Cloud PBX scenarios are allowed.' },
-    { value: 'external', label: 'External Customer', hint: 'Managed IP-PBX scenarios are not applicable.' },
-  ], showWhen: {} },
-  { id: 'hasPbx', label: 'Does customer have own PBX?', options: [
-    { value: 'yes', label: 'Yes' }, { value: 'no', label: 'No' },
-  ], showWhen: { customerType: ['internal', 'external'] } },
-  { id: 'needManaged', label: 'Need YES to source and manage PBX?', options: [
-    { value: 'yes', label: 'Yes' }, { value: 'no', label: 'No' },
-  ], showWhen: { customerType: ['internal'], hasPbx: ['no'] } },
-  { id: 'deploymentPreference', label: 'Prefer On-premise or Cloud?', options: [
-    { value: 'onprem', label: 'On-premise' }, { value: 'cloud', label: 'Cloud' },
-  ], showWhen: { customerType: ['internal'], hasPbx: ['no'], needManaged: ['yes'] } },
-  { id: 'isCertified', label: 'Is the PBX certified?', options: [
-    { value: 'yes', label: 'Yes' }, { value: 'no', label: 'No' },
-  ], showWhen: { hasPbx: ['yes'] } },
-  { id: 'pbxType', label: 'PBX is Legacy PBX or IP-PBX?', options: [
-    { value: 'ip', label: 'IP-PBX' }, { value: 'legacy', label: 'Legacy PBX' },
-  ], showWhen: { hasPbx: ['yes'], isCertified: ['no'] } },
+  {
+    id: 'customerType', label: 'Customer type', start: true,
+    options: [
+      { value: 'internal', label: 'Internal (YTL Subsidiary)', hint: 'Managed IP-PBX / Cloud PBX scenarios are allowed.', nextQuestionId: 'hasPbx' },
+      { value: 'external', label: 'External Customer', hint: 'Managed IP-PBX scenarios are not applicable.', nextQuestionId: 'hasPbx' },
+    ],
+  },
+  {
+    id: 'hasPbx', label: 'Does customer have own PBX?',
+    options: [
+      { value: 'yes', label: 'Yes', nextQuestionId: 'isCertified' },
+      { value: 'no', label: 'No', nextQuestionByAnswer: { customerType: { internal: 'needManaged' } }, status: 'stop', title: 'Deployment cannot proceed', message: 'External customers must obtain a PBX solution from their supplier before proceeding.' },
+    ],
+  },
+  {
+    id: 'needManaged', label: 'Need YES to source and manage PBX?',
+    options: [
+      { value: 'yes', label: 'Yes', nextQuestionId: 'deploymentPreference' },
+      { value: 'no', label: 'No', status: 'stop', title: 'Deployment cannot proceed', message: 'Customer requires a PBX solution before SIP Trunk deployment.' },
+    ],
+  },
+  {
+    id: 'deploymentPreference', label: 'Prefer On-premise or Cloud?',
+    options: [
+      { value: 'onprem', label: 'On-premise', status: 'ready', scenarioId: 'managed-ippbx', message: 'Internal customer requires managed on-premise PBX.' },
+      { value: 'cloud', label: 'Cloud', status: 'ready', scenarioId: 'cloud-pbx-partner', message: 'Internal customer requires cloud PBX.' },
+    ],
+  },
+  {
+    id: 'isCertified', label: 'Is the PBX certified?',
+    options: [
+      { value: 'yes', label: 'Yes', status: 'ready', scenarioId: 'new-certified-ippbx', message: 'Customer has a certified PBX.' },
+      { value: 'no', label: 'No', nextQuestionId: 'pbxType' },
+    ],
+  },
+  {
+    id: 'pbxType', label: 'PBX is Legacy PBX or IP-PBX?',
+    options: [
+      { value: 'ip', label: 'IP-PBX', status: 'ready', scenarioId: 'new-noncertified-ippbx', message: 'Customer has a non-certified IP-PBX.' },
+      { value: 'legacy', label: 'Legacy PBX', status: 'ready', scenarioId: 'legacy-pbx-mediagw', message: 'Customer has a legacy PBX.' },
+    ],
+  },
 ];
+
+const normaliseWizardQuestions = (questions) => {
+  const source = Array.isArray(questions) && questions.length ? questions : DEFAULT_WIZARD_QUESTIONS;
+  const defaultsById = Object.fromEntries(DEFAULT_WIZARD_QUESTIONS.map(q => [q.id, q]));
+  return source.map((question, index) => {
+    const fallback = defaultsById[question.id] || {};
+    return {
+      ...fallback,
+      ...question,
+      start: question.start ?? fallback.start ?? index === 0,
+      options: (question.options || fallback.options || []).map(option => ({ ...option })),
+    };
+  });
+};
 
 const DEFAULT_WIZARD_RULES = [
   { id: 'internal-certified', conditions: { customerType: 'internal', hasPbx: 'yes', isCertified: 'yes' }, status: 'ready', scenarioId: 'new-certified-ippbx', message: 'Internal customer with certified PBX.' },
@@ -414,7 +451,10 @@ export default function SIPPricingPlaybook() {
   const [readiness, setReadiness] = useState({});
   const [readinessCompleted, setReadinessCompleted] = useState(false);
   const [wizardQuestions, setWizardQuestions] = useState(() => {
-    try { const saved = localStorage.getItem('sipWizardQuestions_v1'); return saved ? JSON.parse(saved) : DEFAULT_WIZARD_QUESTIONS; } catch (e) { return DEFAULT_WIZARD_QUESTIONS; }
+    try {
+      const saved = localStorage.getItem('sipWizardQuestions_v2') || localStorage.getItem('sipWizardQuestions_v1');
+      return normaliseWizardQuestions(saved ? JSON.parse(saved) : DEFAULT_WIZARD_QUESTIONS);
+    } catch (e) { return normaliseWizardQuestions(DEFAULT_WIZARD_QUESTIONS); }
   });
   const [wizardRules, setWizardRules] = useState(() => {
     try { const saved = localStorage.getItem('sipWizardRules_v1'); return saved ? JSON.parse(saved) : DEFAULT_WIZARD_RULES; } catch (e) { return DEFAULT_WIZARD_RULES; }
@@ -467,7 +507,7 @@ export default function SIPPricingPlaybook() {
   }, [users]);
 
   useEffect(() => {
-    try { localStorage.setItem('sipWizardQuestions_v1', JSON.stringify(wizardQuestions)); } catch (e) { /* ignore */ }
+    try { localStorage.setItem('sipWizardQuestions_v2', JSON.stringify(wizardQuestions)); } catch (e) { /* ignore */ }
   }, [wizardQuestions]);
 
   useEffect(() => {
@@ -1321,43 +1361,104 @@ export default function SIPPricingPlaybook() {
     ...((bundleRules && bundleRules.channelDidLink) || {}),
   };
 
-  const isQuestionVisible = (question, answers = readiness) => {
-    const conditions = question.showWhen || {};
-    return Object.entries(conditions).every(([key, allowed]) => {
-      const values = Array.isArray(allowed) ? allowed : [allowed];
-      return values.includes(answers[key]);
-    });
+  const getStartWizardQuestionId = () => wizardQuestions.find(q => q.start)?.id || wizardQuestions[0]?.id || '';
+
+  const resolveOptionNextQuestion = (option, answers) => {
+    const conditional = option?.nextQuestionByAnswer || {};
+    for (const [answerQuestionId, mapping] of Object.entries(conditional)) {
+      const mapped = mapping?.[answers[answerQuestionId]];
+      if (mapped) return mapped;
+    }
+    return option?.nextQuestionId || '';
+  };
+
+  const getWizardPath = (answers = readiness) => {
+    const path = [];
+    const visited = new Set();
+    let questionId = getStartWizardQuestionId();
+    let terminalOption = null;
+
+    while (questionId && !visited.has(questionId)) {
+      visited.add(questionId);
+      const question = wizardQuestions.find(q => q.id === questionId);
+      if (!question) break;
+      path.push(question);
+
+      const answer = answers[question.id];
+      if (!answer) break;
+      const option = (question.options || []).find(item => item.value === answer);
+      if (!option) break;
+
+      const nextQuestionId = resolveOptionNextQuestion(option, answers);
+      if (nextQuestionId) {
+        questionId = nextQuestionId;
+        continue;
+      }
+
+      terminalOption = option;
+      break;
+    }
+
+    return { path, terminalOption };
   };
 
   const setReadinessField = (field, value) => {
     setReadiness(prev => {
       const next = { ...prev, [field]: value };
-      const changedIndex = wizardQuestions.findIndex(q => q.id === field);
-      wizardQuestions.slice(changedIndex + 1).forEach(q => { delete next[q.id]; });
+      const currentPath = getWizardPath(next).path.map(q => q.id);
+      Object.keys(next).forEach(key => {
+        if (!currentPath.includes(key)) delete next[key];
+      });
       return next;
     });
     setReadinessCompleted(false);
   };
 
   const getReadinessResult = () => {
-    const visibleQuestions = wizardQuestions.filter(q => isQuestionVisible(q));
-    const unanswered = visibleQuestions.find(q => !readiness[q.id]);
-    if (unanswered) return { status: 'question', message: 'Please answer: ' + unanswered.label };
+    const { path, terminalOption } = getWizardPath(readiness);
+    const unanswered = path.find(q => !readiness[q.id]);
+    if (unanswered) return { status: 'question', message: 'Please answer: ' + unanswered.label, path };
 
+    if (terminalOption?.status === 'stop') {
+      return { status: 'stop', title: terminalOption.title || 'Deployment cannot proceed', message: terminalOption.message || '', path };
+    }
+
+    if (terminalOption?.status === 'ready' && terminalOption.scenarioId) {
+      return {
+        status: 'ready',
+        scenarioId: terminalOption.scenarioId,
+        scenarioLabel: scenarios.find(sc => sc.id === terminalOption.scenarioId)?.name || terminalOption.scenarioId,
+        message: terminalOption.message || '',
+        path,
+        reason: path.map(q => {
+          const answer = readiness[q.id];
+          const option = (q.options || []).find(item => item.value === answer);
+          return q.label + ': ' + (option?.label || answer);
+        }),
+      };
+    }
+
+    // Backward-compatible fallback for older combination rules.
     const matchedRule = wizardRules.find(rule => Object.entries(rule.conditions || {}).every(([key, value]) => readiness[key] === value));
-    if (!matchedRule) return { status: 'stop', title: 'No matching deployment path', message: 'No rule matches this answer combination. Please contact the administrator.' };
-    if (matchedRule.status === 'stop') return { status: 'stop', title: matchedRule.title || 'Deployment cannot proceed', message: matchedRule.message || '' };
-    return {
-      status: 'ready', scenarioId: matchedRule.scenarioId, scenarioLabel: scenarios.find(sc => sc.id === matchedRule.scenarioId)?.name || matchedRule.scenarioId,
-      reason: Object.entries(matchedRule.conditions || {}).map(([questionId, answer]) => {
-        const q = wizardQuestions.find(item => item.id === questionId);
-        const option = q?.options?.find(item => item.value === answer);
-        return (q?.label || questionId) + ': ' + (option?.label || answer);
-      })
-    };
+    if (matchedRule?.status === 'stop') return { status: 'stop', title: matchedRule.title || 'Deployment cannot proceed', message: matchedRule.message || '', path };
+    if (matchedRule?.status === 'ready') {
+      return {
+        status: 'ready', scenarioId: matchedRule.scenarioId,
+        scenarioLabel: scenarios.find(sc => sc.id === matchedRule.scenarioId)?.name || matchedRule.scenarioId,
+        path,
+        reason: Object.entries(matchedRule.conditions || {}).map(([questionId, answer]) => {
+          const q = wizardQuestions.find(item => item.id === questionId);
+          const option = q?.options?.find(item => item.value === answer);
+          return (q?.label || questionId) + ': ' + (option?.label || answer);
+        }),
+      };
+    }
+
+    return { status: 'stop', title: 'No mapped outcome', message: 'The selected answer does not point to another question or a final scenario. Please contact the administrator.', path };
   };
 
   const readinessResult = getReadinessResult();
+  const activeWizardPath = readinessResult.path || getWizardPath(readiness).path;
   const readinessScenario = readinessResult.scenarioId ? scenarios.find(sc => sc.id === readinessResult.scenarioId) : null;
 
   const useReadinessScenario = () => {
@@ -1370,18 +1471,30 @@ export default function SIPPricingPlaybook() {
 
   const saveWizardQuestion = () => {
     if (!wizardQuestionForm?.id?.trim() || !wizardQuestionForm?.label?.trim()) return;
-    const clean = { ...wizardQuestionForm, id: wizardQuestionForm.id.trim(), label: wizardQuestionForm.label.trim(), options: (wizardQuestionForm.options || []).filter(o => o.value && o.label) };
-    setWizardQuestions(prev => prev.some(q => q.id === clean.id) ? prev.map(q => q.id === clean.id ? clean : q) : [...prev, clean]);
+    const clean = {
+      ...wizardQuestionForm,
+      id: wizardQuestionForm.id.trim(),
+      label: wizardQuestionForm.label.trim(),
+      options: (wizardQuestionForm.options || []).filter(o => o.value && o.label).map(o => ({ ...o })),
+    };
+    setWizardQuestions(prev => normaliseWizardQuestions(prev.some(q => q.id === clean.id) ? prev.map(q => q.id === clean.id ? clean : q) : [...prev, clean]));
     setWizardQuestionForm(null); showSaved();
   };
-  const deleteWizardQuestion = (id) => { setWizardQuestions(prev => prev.filter(q => q.id !== id)); setWizardRules(prev => prev.map(r => ({ ...r, conditions: Object.fromEntries(Object.entries(r.conditions || {}).filter(([k]) => k !== id)) }))); showSaved(); };
+  const deleteWizardQuestion = (id) => {
+    setWizardQuestions(prev => prev.filter(q => q.id !== id).map(q => ({
+      ...q,
+      options: (q.options || []).map(o => ({ ...o, nextQuestionId: o.nextQuestionId === id ? '' : o.nextQuestionId })),
+    })));
+    setWizardRules(prev => prev.map(r => ({ ...r, conditions: Object.fromEntries(Object.entries(r.conditions || {}).filter(([k]) => k !== id)) })));
+    showSaved();
+  };
   const moveWizardQuestion = (id, direction) => setWizardQuestions(prev => { const i=prev.findIndex(q=>q.id===id), j=i+direction; if(i<0||j<0||j>=prev.length)return prev; const a=[...prev]; [a[i],a[j]]=[a[j],a[i]]; return a; });
   const saveWizardRule = () => {
     if (!wizardRuleForm?.id?.trim()) return;
     const clean = { ...wizardRuleForm, id: wizardRuleForm.id.trim(), conditions: Object.fromEntries(Object.entries(wizardRuleForm.conditions || {}).filter(([,v]) => v)) };
     setWizardRules(prev => prev.some(r => r.id === clean.id) ? prev.map(r => r.id === clean.id ? clean : r) : [...prev, clean]); setWizardRuleForm(null); showSaved();
   };
-  const resetWizardConfiguration = () => { setWizardQuestions(DEFAULT_WIZARD_QUESTIONS); setWizardRules(DEFAULT_WIZARD_RULES); setWizardQuestionForm(null); setWizardRuleForm(null); resetReadiness(); showSaved(); };
+  const resetWizardConfiguration = () => { setWizardQuestions(normaliseWizardQuestions(DEFAULT_WIZARD_QUESTIONS)); setWizardRules(DEFAULT_WIZARD_RULES); setWizardQuestionForm(null); setWizardRuleForm(null); resetReadiness(); showSaved(); };
 
   const ReadinessChoice = ({ label, active, onClick, hint }) => (
     <button onClick={onClick} style={{ textAlign: 'left', background: active ? ACCENT_SOFT : SURFACE, border: active ? '2px solid ' + ACCENT : '1.5px solid ' + BORDER, borderRadius: 10, padding: '14px 16px', cursor: 'pointer', minHeight: 72 }}>
@@ -1492,7 +1605,7 @@ export default function SIPPricingPlaybook() {
 
             <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.8fr', gap: 18, alignItems: 'start' }}>
               <div style={{ display: 'grid', gap: 14 }}>
-                {wizardQuestions.filter(q => isQuestionVisible(q)).map((question, index) => (
+                {activeWizardPath.map((question, index) => (
                   <div key={question.id} style={{ background: SURFACE, border: '1px solid ' + BORDER, borderRadius: 12, padding: 18, boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
                     <p style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fontWeight: 700, color: ACCENT, letterSpacing: '0.1em', textTransform: 'uppercase', margin: '0 0 10px' }}>Step {index + 1}</p>
                     <h3 style={{ fontSize: 18, fontWeight: 800, color: INK, margin: '0 0 12px' }}>{question.label}</h3>
@@ -2010,18 +2123,35 @@ export default function SIPPricingPlaybook() {
 
             <div style={{ background: SURFACE, border: '1px solid ' + BORDER, borderRadius: 8, padding: '16px 18px', marginBottom: 16 }}>
               <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:10, marginBottom:12 }}>
-                <div><p style={{ fontFamily:"'JetBrains Mono', monospace", fontSize:10, fontWeight:800, color:ACCENT, margin:0, textTransform:'uppercase' }}>Deployment Readiness Wizard</p><p style={{fontSize:12,color:INK3,margin:'4px 0 0'}}>Create questions, answer options and rules that map answer combinations to scenarios.</p></div>
-                <div style={{display:'flex',gap:6}}><button onClick={()=>setWizardQuestionForm({id:'question-'+Date.now().toString(36),label:'',options:[{value:'yes',label:'Yes'},{value:'no',label:'No'}],showWhen:{}})} style={{background:ACCENT,color:SURFACE,border:'none',borderRadius:7,padding:'7px 10px',fontWeight:700,cursor:'pointer'}}>Add Question</button><button onClick={()=>setWizardRuleForm({id:'rule-'+Date.now().toString(36),conditions:{},status:'ready',scenarioId:scenarios[0]?.id||'',title:'',message:''})} style={{background:ACCENT2,color:SURFACE,border:'none',borderRadius:7,padding:'7px 10px',fontWeight:700,cursor:'pointer'}}>Add Rule</button><button onClick={resetWizardConfiguration} style={{background:SURFACE,color:RED,border:'1px solid #FECACA',borderRadius:7,padding:'7px 10px',fontWeight:700,cursor:'pointer'}}>Reset</button></div>
+                <div><p style={{ fontFamily:"'JetBrains Mono', monospace", fontSize:10, fontWeight:800, color:ACCENT, margin:0, textTransform:'uppercase' }}>Deployment Readiness Wizard</p><p style={{fontSize:12,color:INK3,margin:'4px 0 0'}}>Create questions and map each answer to the next question, a scenario, or a stop outcome.</p></div>
+                <div style={{display:'flex',gap:6}}><button onClick={()=>setWizardQuestionForm({id:'question-'+Date.now().toString(36),label:'',start:wizardQuestions.length===0,options:[{value:'yes',label:'Yes',nextQuestionId:''},{value:'no',label:'No',nextQuestionId:''}]})} style={{background:ACCENT,color:SURFACE,border:'none',borderRadius:7,padding:'7px 10px',fontWeight:700,cursor:'pointer'}}>Add Question</button><button onClick={()=>setWizardRuleForm({id:'rule-'+Date.now().toString(36),conditions:{},status:'ready',scenarioId:scenarios[0]?.id||'',title:'',message:''})} style={{background:ACCENT2,color:SURFACE,border:'none',borderRadius:7,padding:'7px 10px',fontWeight:700,cursor:'pointer'}}>Add Rule</button><button onClick={resetWizardConfiguration} style={{background:SURFACE,color:RED,border:'1px solid #FECACA',borderRadius:7,padding:'7px 10px',fontWeight:700,cursor:'pointer'}}>Reset</button></div>
               </div>
               {wizardQuestionForm && <div style={{background:BG,border:'1px solid '+BORDER,borderRadius:8,padding:12,marginBottom:12}}>
-                <div style={{display:'grid',gridTemplateColumns:'180px 1fr',gap:8}}><input value={wizardQuestionForm.id} onChange={e=>setWizardQuestionForm(p=>({...p,id:e.target.value}))} placeholder="Question ID" style={{padding:8,border:'1px solid '+BORDER,borderRadius:6}}/><input value={wizardQuestionForm.label} onChange={e=>setWizardQuestionForm(p=>({...p,label:e.target.value}))} placeholder="Question text" style={{padding:8,border:'1px solid '+BORDER,borderRadius:6}}/></div>
-                <p style={{fontSize:11,fontWeight:700,color:INK3}}>Answer Options</p>{(wizardQuestionForm.options||[]).map((o,i)=><div key={i} style={{display:'grid',gridTemplateColumns:'1fr 1.5fr 1.5fr auto',gap:6,marginBottom:6}}><input value={o.value} onChange={e=>setWizardQuestionForm(p=>({...p,options:p.options.map((x,j)=>j===i?{...x,value:e.target.value}:x)}))} placeholder="value"/><input value={o.label} onChange={e=>setWizardQuestionForm(p=>({...p,options:p.options.map((x,j)=>j===i?{...x,label:e.target.value}:x)}))} placeholder="label"/><input value={o.hint||''} onChange={e=>setWizardQuestionForm(p=>({...p,options:p.options.map((x,j)=>j===i?{...x,hint:e.target.value}:x)}))} placeholder="hint (optional)"/><button onClick={()=>setWizardQuestionForm(p=>({...p,options:p.options.filter((_,j)=>j!==i)}))}>×</button></div>)}
-                <button onClick={()=>setWizardQuestionForm(p=>({...p,options:[...(p.options||[]),{value:'',label:''}]}))}>+ Option</button>
-                <p style={{fontSize:11,fontWeight:700,color:INK3}}>Show only when (optional)</p><div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(180px,1fr))',gap:6}}>{wizardQuestions.filter(q=>q.id!==wizardQuestionForm.id).map(q=><select key={q.id} value={(wizardQuestionForm.showWhen?.[q.id]||[])[0]||''} onChange={e=>setWizardQuestionForm(p=>({...p,showWhen:{...(p.showWhen||{}),[q.id]:e.target.value?[e.target.value]:[]}}))}><option value="">{q.label}: Any</option>{q.options.map(o=><option key={o.value} value={o.value}>{q.label}: {o.label}</option>)}</select>)}</div>
+                <div style={{display:'grid',gridTemplateColumns:'180px 1fr auto',gap:8,alignItems:'center'}}>
+                  <input value={wizardQuestionForm.id} onChange={e=>setWizardQuestionForm(p=>({...p,id:e.target.value}))} placeholder="Question ID" style={{padding:8,border:'1px solid '+BORDER,borderRadius:6}}/>
+                  <input value={wizardQuestionForm.label} onChange={e=>setWizardQuestionForm(p=>({...p,label:e.target.value}))} placeholder="Question text" style={{padding:8,border:'1px solid '+BORDER,borderRadius:6}}/>
+                  <label style={{fontSize:11,color:INK2,display:'flex',alignItems:'center',gap:5}}><input type="checkbox" checked={!!wizardQuestionForm.start} onChange={e=>setWizardQuestionForm(p=>({...p,start:e.target.checked}))}/> Start question</label>
+                </div>
+                <p style={{fontSize:11,fontWeight:700,color:INK3}}>Answer Options — map each answer to the next question or final outcome</p>
+                {(wizardQuestionForm.options||[]).map((o,i)=><div key={i} style={{display:'grid',gridTemplateColumns:'0.8fr 1.2fr 1.2fr 1.2fr 1.5fr auto',gap:6,marginBottom:6,alignItems:'center'}}>
+                  <input value={o.value} onChange={e=>setWizardQuestionForm(p=>({...p,options:p.options.map((x,j)=>j===i?{...x,value:e.target.value}:x)}))} placeholder="value"/>
+                  <input value={o.label} onChange={e=>setWizardQuestionForm(p=>({...p,options:p.options.map((x,j)=>j===i?{...x,label:e.target.value}:x)}))} placeholder="label"/>
+                  <select value={o.nextQuestionId||''} onChange={e=>setWizardQuestionForm(p=>({...p,options:p.options.map((x,j)=>j===i?{...x,nextQuestionId:e.target.value,status:e.target.value?'':x.status,scenarioId:e.target.value?'':x.scenarioId}:x)}))}>
+                    <option value="">No next question</option>
+                    {wizardQuestions.filter(q=>q.id!==wizardQuestionForm.id).map(q=><option key={q.id} value={q.id}>Next: {q.label}</option>)}
+                  </select>
+                  <select value={o.status||''} disabled={!!o.nextQuestionId} onChange={e=>setWizardQuestionForm(p=>({...p,options:p.options.map((x,j)=>j===i?{...x,status:e.target.value,scenarioId:e.target.value==='ready'?(x.scenarioId||scenarios[0]?.id||''):''}:x)}))}>
+                    <option value="">No final outcome</option><option value="ready">Recommend scenario</option><option value="stop">Stop / Not applicable</option>
+                  </select>
+                  {o.status==='ready' && !o.nextQuestionId ? <select value={o.scenarioId||''} onChange={e=>setWizardQuestionForm(p=>({...p,options:p.options.map((x,j)=>j===i?{...x,scenarioId:e.target.value}:x)}))}>{scenarios.map(sc=><option key={sc.id} value={sc.id}>{sc.name}</option>)}</select> : <input value={o.message||''} onChange={e=>setWizardQuestionForm(p=>({...p,options:p.options.map((x,j)=>j===i?{...x,message:e.target.value}:x)}))} placeholder={o.status==='stop'?'Stop message':'Hint / result message'}/>} 
+                  <button onClick={()=>setWizardQuestionForm(p=>({...p,options:p.options.filter((_,j)=>j!==i)}))}>×</button>
+                </div>)}
+                <button onClick={()=>setWizardQuestionForm(p=>({...p,options:[...(p.options||[]),{value:'',label:'',nextQuestionId:''}]}))}>+ Option</button>
                 <div style={{display:'flex',gap:6,marginTop:10}}><button onClick={saveWizardQuestion}>Save Question</button><button onClick={()=>setWizardQuestionForm(null)}>Cancel</button></div>
               </div>}
+
               {wizardRuleForm && <div style={{background:BG,border:'1px solid '+BORDER,borderRadius:8,padding:12,marginBottom:12}}><div style={{display:'grid',gridTemplateColumns:'180px 140px 1fr',gap:8}}><input value={wizardRuleForm.id} onChange={e=>setWizardRuleForm(p=>({...p,id:e.target.value}))} placeholder="Rule ID"/><select value={wizardRuleForm.status} onChange={e=>setWizardRuleForm(p=>({...p,status:e.target.value}))}><option value="ready">Recommend scenario</option><option value="stop">Stop / Not applicable</option></select>{wizardRuleForm.status==='ready'?<select value={wizardRuleForm.scenarioId} onChange={e=>setWizardRuleForm(p=>({...p,scenarioId:e.target.value}))}>{scenarios.map(sc=><option key={sc.id} value={sc.id}>{sc.name}</option>)}</select>:<input value={wizardRuleForm.title||''} onChange={e=>setWizardRuleForm(p=>({...p,title:e.target.value}))} placeholder="Stop title"/>}</div><p style={{fontSize:11,fontWeight:700,color:INK3}}>Conditions</p><div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(180px,1fr))',gap:6}}>{wizardQuestions.map(q=><select key={q.id} value={wizardRuleForm.conditions?.[q.id]||''} onChange={e=>setWizardRuleForm(p=>({...p,conditions:{...(p.conditions||{}),[q.id]:e.target.value}}))}><option value="">{q.label}: Any</option>{q.options.map(o=><option key={o.value} value={o.value}>{q.label}: {o.label}</option>)}</select>)}</div><textarea value={wizardRuleForm.message||''} onChange={e=>setWizardRuleForm(p=>({...p,message:e.target.value}))} placeholder="Result message" style={{width:'100%',marginTop:8,minHeight:55}}/><div style={{display:'flex',gap:6,marginTop:8}}><button onClick={saveWizardRule}>Save Rule</button><button onClick={()=>setWizardRuleForm(null)}>Cancel</button></div></div>}
-              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}><div><p style={{fontWeight:800,fontSize:12}}>Questions</p>{wizardQuestions.map((q,i)=><div key={q.id} style={{display:'flex',justifyContent:'space-between',gap:6,padding:'7px 0',borderBottom:'1px solid '+BORDER}}><span style={{fontSize:12}}>{i+1}. {q.label}</span><span><button onClick={()=>moveWizardQuestion(q.id,-1)} disabled={i===0}>↑</button><button onClick={()=>moveWizardQuestion(q.id,1)} disabled={i===wizardQuestions.length-1}>↓</button><button onClick={()=>setWizardQuestionForm(JSON.parse(JSON.stringify(q)))}>Edit</button><button onClick={()=>deleteWizardQuestion(q.id)}>Delete</button></span></div>)}</div><div><p style={{fontWeight:800,fontSize:12}}>Rules</p>{wizardRules.map(r=><div key={r.id} style={{display:'flex',justifyContent:'space-between',gap:6,padding:'7px 0',borderBottom:'1px solid '+BORDER}}><span style={{fontSize:12}}>{r.id} → {r.status==='ready'?(scenarios.find(s=>s.id===r.scenarioId)?.name||r.scenarioId):'Stop'}</span><span><button onClick={()=>setWizardRuleForm(JSON.parse(JSON.stringify(r)))}>Edit</button><button onClick={()=>setWizardRules(prev=>prev.filter(x=>x.id!==r.id))}>Delete</button></span></div>)}</div></div>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}><div><p style={{fontWeight:800,fontSize:12}}>Questions</p>{wizardQuestions.map((q,i)=><div key={q.id} style={{padding:'7px 0',borderBottom:'1px solid '+BORDER}}><div style={{display:'flex',justifyContent:'space-between',gap:6}}><span style={{fontSize:12,fontWeight:700}}>{i+1}. {q.label}{q.start?' · START':''}</span><span><button onClick={()=>moveWizardQuestion(q.id,-1)} disabled={i===0}>↑</button><button onClick={()=>moveWizardQuestion(q.id,1)} disabled={i===wizardQuestions.length-1}>↓</button><button onClick={()=>setWizardQuestionForm(JSON.parse(JSON.stringify(q)))}>Edit</button><button onClick={()=>deleteWizardQuestion(q.id)}>Delete</button></span></div><div style={{fontSize:10,color:INK3,marginTop:3}}>{(q.options||[]).map(o=>o.label+' → '+(o.nextQuestionId?(wizardQuestions.find(x=>x.id===o.nextQuestionId)?.label||o.nextQuestionId):o.status==='ready'?(scenarios.find(sc=>sc.id===o.scenarioId)?.name||'Scenario'):o.status==='stop'?'Stop':'Unmapped')).join(' | ')}</div></div>)}</div><div><p style={{fontWeight:800,fontSize:12}}>Rules</p>{wizardRules.map(r=><div key={r.id} style={{display:'flex',justifyContent:'space-between',gap:6,padding:'7px 0',borderBottom:'1px solid '+BORDER}}><span style={{fontSize:12}}>{r.id} → {r.status==='ready'?(scenarios.find(s=>s.id===r.scenarioId)?.name||r.scenarioId):'Stop'}</span><span><button onClick={()=>setWizardRuleForm(JSON.parse(JSON.stringify(r)))}>Edit</button><button onClick={()=>setWizardRules(prev=>prev.filter(x=>x.id!==r.id))}>Delete</button></span></div>)}</div></div>
             </div>
 
             <div style={{ background: SURFACE, border: '1px solid ' + BORDER, borderRadius: 8, padding: '16px 18px', marginBottom: 16, boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
