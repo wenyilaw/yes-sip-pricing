@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { ChevronDown, ChevronRight, Plus, Trash2, Save, FileText, Settings, Calculator, Shield, Phone, Server, Globe, AlertTriangle, CheckCircle, Edit, X, Users, Lock, LogOut, Printer, Download, Upload, UserPlus, RefreshCw, Eye, Key, Copy, Search, ChevronLeft } from 'lucide-react';
+import { ChevronDown, ChevronRight, Plus, Trash2, Save, FileText, Settings, Calculator, Shield, Phone, Server, Globe, AlertTriangle, CheckCircle, Edit, X, Users, Lock, LogOut, Printer, Download, Upload, UserPlus, RefreshCw, Eye, Key, Copy, Search, ChevronLeft, Mail } from 'lucide-react';
 
 // ═══════════════════════════════════════════════════════════════
 // PALETTE
@@ -18,6 +18,19 @@ const GREEN_SOFT = '#F0FDF4';
 const RED = '#DC2626';
 const RED_SOFT = '#FEF2F2';
 const AMBER = '#D97706';
+
+const DEFAULT_WATERMARK = {
+  enabled: true,
+  text: 'INTERNAL USE ONLY',
+  opacity: 0.10,
+  rotation: -28,
+  color: '#94A3B8',
+  fontSize: 58,
+  calculator: true,
+  estimatedCost: true,
+  pdf: true,
+  excel: true,
+};
 
 const SI = ({ c: C, ...p }) => (C ? <C {...p} /> : null);
 
@@ -469,6 +482,12 @@ export default function SIPPricingPlaybook() {
   const [customerName, setCustomerName] = useState('');
   const [quoteRef, setQuoteRef] = useState('');
   const [quoteValidity, setQuoteValidity] = useState(30);
+  const [watermark, setWatermark] = useState(() => {
+    try {
+      const saved = localStorage.getItem('sipWatermark_v1');
+      return saved ? { ...DEFAULT_WATERMARK, ...JSON.parse(saved) } : DEFAULT_WATERMARK;
+    } catch (e) { return DEFAULT_WATERMARK; }
+  });
 
   // ─── QUOTES STATE ───────────────────────────────────────
   const [quoteItems, setQuoteItems] = useState([]);
@@ -513,6 +532,10 @@ export default function SIPPricingPlaybook() {
   useEffect(() => {
     try { localStorage.setItem('sipWizardRules_v1', JSON.stringify(wizardRules)); } catch (e) { /* ignore */ }
   }, [wizardRules]);
+
+  useEffect(() => {
+    try { localStorage.setItem('sipWatermark_v1', JSON.stringify(watermark)); } catch (e) { /* ignore */ }
+  }, [watermark]);
   // ─── CALLBACKS ──────────────────────────────────────────
   const showSaved = useCallback(() => {
     setSavedNotice(true);
@@ -1147,6 +1170,78 @@ export default function SIPPricingPlaybook() {
     setQuoteItems(prev => [...prev, { ...prev[idx], date: new Date().toLocaleString('en-MY', { timeZone: 'Asia/Kuala_Lumpur' }) }]);
   };
 
+  const getWatermarkOverlay = (enabled = true) => {
+    if (!watermark.enabled || !enabled || !watermark.text) return null;
+
+    // Render the watermark ABOVE the white calculator / estimated-cost cards.
+    // pointerEvents:none keeps every button and input fully usable.
+    const tiles = Array.from({ length: 30 }, (_, index) => {
+      const column = index % 5;
+      const row = Math.floor(index / 5);
+      return (
+        <div key={index} style={{
+          position: 'absolute',
+          left: `${column * 25 - 10}%`,
+          top: `${row * 22 + 4}%`,
+          width: '34%',
+          textAlign: 'center',
+          fontSize: Math.max(24, Number(watermark.fontSize) * 0.55),
+          fontWeight: 800,
+          letterSpacing: '0.08em',
+          lineHeight: 1,
+          whiteSpace: 'nowrap',
+          color: watermark.color,
+          opacity: watermark.opacity,
+          transform: `rotate(${watermark.rotation}deg)`,
+          transformOrigin: 'center',
+        }}>
+          {watermark.text}
+        </div>
+      );
+    });
+
+    return (
+      <div aria-hidden="true" style={{
+        position: 'absolute',
+        inset: 0,
+        pointerEvents: 'none',
+        userSelect: 'none',
+        overflow: 'hidden',
+        zIndex: 20,
+      }}>
+        {tiles}
+      </div>
+    );
+  };
+
+  const buildEstimatedCostEmailBody = (qi) => {
+    const totalCost = qi.lines.reduce((s, l) => s + l.internal + l.external, 0);
+    const oneTime = qi.lines.filter(l => l.unit === 'one-time' || l.unit.includes('one-time')).reduce((s, l) => s + l.internal + l.external, 0);
+    const recurring = totalCost - oneTime;
+    const rows = qi.lines.map(l => `${l.section || 'Line Items'} - ${l.label} | Qty: ${l.qty} | ${formatMYR(l.internal + l.external)}`).join('\n');
+    return `Dear Sir/Madam,\n\nPlease find the estimated cost summary below.\n\nReference: ${qi.ref}\nCustomer: ${qi.customer}\nScenario: ${qi.scenario}\nDate: ${qi.date}\nValidity: ${qi.validity} days\n\n${rows}\n\nOne-Time Estimated Cost: ${formatMYR(oneTime)}\nMonthly Estimated Cost: ${formatMYR(recurring)}\nFirst Month Estimated Cost: ${formatMYR(oneTime + recurring)}\n\nThis estimate is for reference and remains subject to final technical and commercial validation.\n\nRegards`;
+  };
+
+  const emailEstimatedQuote = async (qi) => {
+    const recipient = window.prompt('Recipient email address (optional):', '') || '';
+    const subject = `Estimated Cost ${qi.ref} - ${qi.customer}`;
+    const body = buildEstimatedCostEmailBody(qi);
+    const safeName = String(qi.ref || 'estimated-cost').replace(/[^a-zA-Z0-9_-]/g, '_');
+    const htmlFile = new File([`<!doctype html><html><head><meta charset="utf-8"><title>${subject}</title></head><body><pre style="font-family:Arial,sans-serif;white-space:pre-wrap">${body.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</pre></body></html>`], `${safeName}.html`, { type: 'text/html' });
+
+    try {
+      if (navigator.share && navigator.canShare && navigator.canShare({ files: [htmlFile] })) {
+        await navigator.share({ title: subject, text: body, files: [htmlFile] });
+        return;
+      }
+    } catch (err) {
+      if (err?.name === 'AbortError') return;
+    }
+
+    const mailto = `mailto:${encodeURIComponent(recipient)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    window.location.href = mailto;
+  };
+
   // ─── EXCEL EXPORT ───────────────────────────────────────
   const exportQuoteToExcel = (qi) => {
     const esc = (v) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -1167,6 +1262,7 @@ export default function SIPPricingPlaybook() {
 
     const html = '<html><head><meta charset="utf-8" /></head><body>' +
       '<table border="1">' +
+      (watermark.enabled && watermark.excel ? '<tr><th colspan="5" style="font-size:26px;color:' + watermark.color + ';opacity:' + watermark.opacity + ';">' + esc(watermark.text) + '</th></tr>' : '') +
       '<tr><th colspan="5" style="font-size:16px;">SIP Services Estimated Cost</th></tr>' +
       '<tr><td><b>Reference</b></td><td colspan="4">' + esc(qi.ref) + '</td></tr>' +
       '<tr><td><b>Customer</b></td><td colspan="4">' + esc(qi.customer) + '</td></tr>' +
@@ -1226,6 +1322,7 @@ export default function SIPPricingPlaybook() {
     const html = '<!DOCTYPE html><html><head><title>Quotation - ' + qi.ref + '</title>' +
       '<style>body{font-family:Inter,Segoe UI,sans-serif;margin:40px;color:#0F172A;max-width:800px;margin:40px auto;}' +
       '@media print{body{margin:20px;}}</style></head><body>' +
+      (watermark.enabled && watermark.pdf ? '<div style="position:fixed;top:45%;left:50%;transform:translate(-50%,-50%) rotate(' + watermark.rotation + 'deg);font-size:' + (watermark.fontSize + 20) + 'px;font-weight:800;color:' + watermark.color + ';opacity:' + watermark.opacity + ';white-space:nowrap;pointer-events:none;z-index:0;">' + watermark.text + '</div>' : '') +
       '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:32px;border-bottom:3px solid #0F172A;padding-bottom:20px;">' +
       '<div><div style="width:40px;height:40px;background:#2563EB;border-radius:8px;display:flex;align-items:center;justify-content:center;margin-bottom:12px;">' +
       '<span style="color:white;font-size:18px;font-weight:800;">S</span></div>' +
@@ -1353,6 +1450,7 @@ export default function SIPPricingPlaybook() {
     { id: 'scenarios', label: 'Scenarios', icon: Shield, roles: ['admin'] },
     { id: 'quotes', label: 'Estimated Cost', icon: FileText, roles: ['admin', 'editor', 'sales'] },
     { id: 'users', label: 'User Management', icon: Users, roles: ['admin'] },
+    { id: 'settings', label: 'Settings', icon: Settings, roles: ['admin'] },
   ].filter(t => t.roles.includes(currentUser.role));
 
   const visibleCostCategories = currentUser.role === 'sales' ? ['callRates'] : catOrder;
@@ -1662,7 +1760,9 @@ export default function SIPPricingPlaybook() {
             TAB 1: SALES CALCULATOR
             ═══════════════════════════════════════════════════ */}
         {activeTab === 'sales' && (
-          <div className="fade-in">
+          <div className="fade-in" style={{ position: 'relative' }}>
+            {getWatermarkOverlay(watermark.calculator)}
+            <div style={{ position: 'relative', zIndex: 1 }}>
             <div style={{ borderBottom: '2px solid ' + INK, paddingBottom: 10, marginBottom: 20, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: 12 }}>
               <div>
                 <p style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: ACCENT, letterSpacing: '0.1em', textTransform: 'uppercase', fontWeight: 600, margin: 0 }}>01 / Scenario Selector</p>
@@ -1896,6 +1996,7 @@ export default function SIPPricingPlaybook() {
                 </div>
               </div>
             )}
+            </div>
           </div>
         )}
 
@@ -2336,7 +2437,9 @@ export default function SIPPricingPlaybook() {
             TAB 3: SAVED QUOTES
             ═══════════════════════════════════════════════════ */}
         {activeTab === 'quotes' && (
-          <div className="fade-in">
+          <div className="fade-in" style={{ position: 'relative' }}>
+            {getWatermarkOverlay(watermark.estimatedCost)}
+            <div style={{ position: 'relative', zIndex: 1 }}>
             <div style={{ borderBottom: '2px solid ' + INK, paddingBottom: 10, marginBottom: 20, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
               <div>
                 <p style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: ACCENT, letterSpacing: '0.1em', textTransform: 'uppercase', fontWeight: 600, margin: 0 }}>03 / Estimated Cost</p>
@@ -2377,6 +2480,9 @@ export default function SIPPricingPlaybook() {
                           <button onClick={() => exportQuoteToExcel(qi)} title="Export Excel" style={{ background: SURFACE, border: '1.5px solid ' + BORDER, borderRadius: 6, padding: '5px 7px', cursor: 'pointer', color: GREEN }}>
                             XLS
                           </button>
+                          <button onClick={() => emailEstimatedQuote(qi)} title="Email estimated cost" style={{ background: SURFACE, border: '1.5px solid ' + BORDER, borderRadius: 6, padding: '5px 7px', cursor: 'pointer', color: ACCENT }}>
+                            <Mail style={{ width: 13, height: 13 }} />
+                          </button>
                           <button onClick={() => duplicateQuote(idx)} title="Duplicate" style={{ background: SURFACE, border: '1.5px solid ' + BORDER, borderRadius: 6, padding: '5px 7px', cursor: 'pointer', color: INK3 }}>
                             <Copy style={{ width: 13, height: 13 }} />
                           </button>
@@ -2409,6 +2515,7 @@ export default function SIPPricingPlaybook() {
                 })}
               </div>
             )}
+            </div>
           </div>
         )}
 
@@ -2580,6 +2687,42 @@ export default function SIPPricingPlaybook() {
                   </p>
                 </div>
               </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'settings' && canManageUsers && (
+          <div className="fade-in">
+            <div style={{ borderBottom: '2px solid ' + INK, paddingBottom: 10, marginBottom: 20 }}>
+              <p style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: ACCENT, letterSpacing: '0.1em', textTransform: 'uppercase', fontWeight: 600, margin: 0 }}>05 / Settings</p>
+              <h2 style={{ fontWeight: 800, fontSize: 30, color: INK, margin: '6px 0 0' }}>Watermark settings</h2>
+            </div>
+            <div style={{ background: SURFACE, border: '1px solid ' + BORDER, borderRadius: 10, padding: 20, maxWidth: 760 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, marginBottom: 18 }}>
+                <input type="checkbox" checked={watermark.enabled} onChange={e => setWatermark(p => ({ ...p, enabled: e.target.checked }))} /> Enable watermark
+              </label>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+                <label style={{ fontSize: 12, fontWeight: 600 }}>Watermark text
+                  <input value={watermark.text} onChange={e => setWatermark(p => ({ ...p, text: e.target.value }))} style={{ width: '100%', marginTop: 6, padding: 9, border: '1.5px solid ' + BORDER, borderRadius: 7, boxSizing: 'border-box' }} />
+                </label>
+                <label style={{ fontSize: 12, fontWeight: 600 }}>Colour
+                  <input type="color" value={watermark.color} onChange={e => setWatermark(p => ({ ...p, color: e.target.value }))} style={{ width: '100%', height: 38, marginTop: 6, border: '1.5px solid ' + BORDER, borderRadius: 7 }} />
+                </label>
+                <label style={{ fontSize: 12, fontWeight: 600 }}>Opacity ({Math.round(watermark.opacity * 100)}%)
+                  <input type="range" min="0.03" max="0.35" step="0.01" value={watermark.opacity} onChange={e => setWatermark(p => ({ ...p, opacity: Number(e.target.value) }))} style={{ width: '100%', marginTop: 10 }} />
+                </label>
+                <label style={{ fontSize: 12, fontWeight: 600 }}>Rotation ({watermark.rotation}°)
+                  <input type="range" min="-60" max="0" step="1" value={watermark.rotation} onChange={e => setWatermark(p => ({ ...p, rotation: Number(e.target.value) }))} style={{ width: '100%', marginTop: 10 }} />
+                </label>
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, marginTop: 18 }}>
+                {[['calculator','Sales Calculator'],['estimatedCost','Estimated Cost page'],['pdf','PDF / Print'],['excel','Excel']].map(([key,label]) => (
+                  <label key={key} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+                    <input type="checkbox" checked={!!watermark[key]} onChange={e => setWatermark(p => ({ ...p, [key]: e.target.checked }))} /> {label}
+                  </label>
+                ))}
+              </div>
+              <button onClick={() => setWatermark(DEFAULT_WATERMARK)} style={{ marginTop: 20, background: SURFACE, border: '1.5px solid ' + BORDER, borderRadius: 7, padding: '8px 12px', cursor: 'pointer', fontWeight: 600 }}>Reset Watermark</button>
             </div>
           </div>
         )}
