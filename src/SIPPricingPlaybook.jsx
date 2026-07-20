@@ -32,6 +32,14 @@ const DEFAULT_WATERMARK = {
   excel: true,
 };
 
+
+const DEFAULT_EMAIL_SETTINGS = {
+  apiEndpoint: '',
+  apiKey: '',
+  senderName: 'SIP Pricing Playbook',
+  senderEmail: '',
+};
+
 const SI = ({ c: C, ...p }) => (C ? <C {...p} /> : null);
 
 // ═══════════════════════════════════════════════════════════════
@@ -489,6 +497,14 @@ export default function SIPPricingPlaybook() {
     } catch (e) { return DEFAULT_WATERMARK; }
   });
 
+  const [emailSettings, setEmailSettings] = useState(() => {
+    try {
+      const saved = localStorage.getItem('sipEmailSettings_v1');
+      return saved ? { ...DEFAULT_EMAIL_SETTINGS, ...JSON.parse(saved) } : DEFAULT_EMAIL_SETTINGS;
+    } catch (e) { return DEFAULT_EMAIL_SETTINGS; }
+  });
+  const [emailSendingRef, setEmailSendingRef] = useState('');
+
   // ─── QUOTES STATE ───────────────────────────────────────
   const [quoteItems, setQuoteItems] = useState([]);
 
@@ -536,6 +552,11 @@ export default function SIPPricingPlaybook() {
   useEffect(() => {
     try { localStorage.setItem('sipWatermark_v1', JSON.stringify(watermark)); } catch (e) { /* ignore */ }
   }, [watermark]);
+
+
+  useEffect(() => {
+    try { localStorage.setItem('sipEmailSettings_v1', JSON.stringify(emailSettings)); } catch (e) { /* ignore */ }
+  }, [emailSettings]);
   // ─── CALLBACKS ──────────────────────────────────────────
   const showSaved = useCallback(() => {
     setSavedNotice(true);
@@ -1173,43 +1194,38 @@ export default function SIPPricingPlaybook() {
   const getWatermarkOverlay = (enabled = true) => {
     if (!watermark.enabled || !enabled || !watermark.text) return null;
 
-    // Render the watermark ABOVE the white calculator / estimated-cost cards.
-    // pointerEvents:none keeps every button and input fully usable.
-    const tiles = Array.from({ length: 30 }, (_, index) => {
-      const column = index % 5;
-      const row = Math.floor(index / 5);
-      return (
-        <div key={index} style={{
-          position: 'absolute',
-          left: `${column * 25 - 10}%`,
-          top: `${row * 22 + 4}%`,
-          width: '34%',
-          textAlign: 'center',
-          fontSize: Math.max(24, Number(watermark.fontSize) * 0.55),
-          fontWeight: 800,
-          letterSpacing: '0.08em',
-          lineHeight: 1,
-          whiteSpace: 'nowrap',
-          color: watermark.color,
-          opacity: watermark.opacity,
-          transform: `rotate(${watermark.rotation}deg)`,
-          transformOrigin: 'center',
-        }}>
-          {watermark.text}
-        </div>
-      );
-    });
+    // Reduced layout: only six watermarks across the full page (2 columns x 3 rows).
+    const positions = [
+      { left: '8%', top: '15%' }, { left: '56%', top: '15%' },
+      { left: '8%', top: '48%' }, { left: '56%', top: '48%' },
+      { left: '8%', top: '81%' }, { left: '56%', top: '81%' },
+    ];
 
     return (
       <div aria-hidden="true" style={{
-        position: 'absolute',
-        inset: 0,
-        pointerEvents: 'none',
-        userSelect: 'none',
-        overflow: 'hidden',
-        zIndex: 20,
+        position: 'absolute', inset: 0, pointerEvents: 'none', userSelect: 'none',
+        overflow: 'hidden', zIndex: 20,
       }}>
-        {tiles}
+        {positions.map((position, index) => (
+          <div key={index} style={{
+            position: 'absolute',
+            left: position.left,
+            top: position.top,
+            width: '36%',
+            textAlign: 'center',
+            fontSize: Math.max(26, Number(watermark.fontSize) * 0.65),
+            fontWeight: 800,
+            letterSpacing: '0.08em',
+            lineHeight: 1,
+            whiteSpace: 'nowrap',
+            color: watermark.color,
+            opacity: watermark.opacity,
+            transform: `rotate(${watermark.rotation}deg)`,
+            transformOrigin: 'center',
+          }}>
+            {watermark.text}
+          </div>
+        ))}
       </div>
     );
   };
@@ -1223,24 +1239,57 @@ export default function SIPPricingPlaybook() {
   };
 
   const emailEstimatedQuote = async (qi) => {
-    const recipient = window.prompt('Recipient email address (optional):', '') || '';
-    const subject = `Estimated Cost ${qi.ref} - ${qi.customer}`;
-    const body = buildEstimatedCostEmailBody(qi);
-    const safeName = String(qi.ref || 'estimated-cost').replace(/[^a-zA-Z0-9_-]/g, '_');
-    const htmlFile = new File([`<!doctype html><html><head><meta charset="utf-8"><title>${subject}</title></head><body><pre style="font-family:Arial,sans-serif;white-space:pre-wrap">${body.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</pre></body></html>`], `${safeName}.html`, { type: 'text/html' });
-
-    try {
-      if (navigator.share && navigator.canShare && navigator.canShare({ files: [htmlFile] })) {
-        await navigator.share({ title: subject, text: body, files: [htmlFile] });
-        return;
-      }
-    } catch (err) {
-      if (err?.name === 'AbortError') return;
+    if (!emailSettings.apiEndpoint.trim()) {
+      alert('Automatic email is not configured. Please enter the Email API Endpoint under Settings.');
+      setActiveTab('settings');
+      return;
     }
 
-    const mailto = `mailto:${encodeURIComponent(recipient)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-    window.location.href = mailto;
+    const recipient = (window.prompt('Recipient email address:', '') || '').trim();
+    if (!recipient) return;
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipient)) {
+      alert('Please enter a valid recipient email address.');
+      return;
+    }
+
+    const subject = `Estimated Cost ${qi.ref} - ${qi.customer}`;
+    const textBody = buildEstimatedCostEmailBody(qi);
+    const totalCost = qi.lines.reduce((sum, line) => sum + line.internal + line.external, 0);
+    const escHtml = (value) => String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const rows = qi.lines.map(line => '<tr><td style="padding:7px;border-bottom:1px solid #e2e8f0">' + escHtml(line.section || 'Line Items') + '</td><td style="padding:7px;border-bottom:1px solid #e2e8f0">' + escHtml(line.label) + '</td><td style="padding:7px;border-bottom:1px solid #e2e8f0;text-align:center">' + line.qty + '</td><td style="padding:7px;border-bottom:1px solid #e2e8f0;text-align:right">' + escHtml(formatMYR(line.internal + line.external)) + '</td></tr>').join('');
+    const htmlBody = '<div style="font-family:Arial,sans-serif;color:#0f172a"><h2>SIP Services Estimated Cost</h2><p><b>Reference:</b> ' + escHtml(qi.ref) + '<br><b>Customer:</b> ' + escHtml(qi.customer) + '<br><b>Scenario:</b> ' + escHtml(qi.scenario) + '<br><b>Date:</b> ' + escHtml(qi.date) + '<br><b>Validity:</b> ' + escHtml(qi.validity) + ' days</p><table style="width:100%;border-collapse:collapse"><thead><tr><th style="padding:7px;text-align:left;border-bottom:2px solid #0f172a">Section</th><th style="padding:7px;text-align:left;border-bottom:2px solid #0f172a">Item</th><th style="padding:7px;text-align:center;border-bottom:2px solid #0f172a">Qty</th><th style="padding:7px;text-align:right;border-bottom:2px solid #0f172a">Estimated Cost</th></tr></thead><tbody>' + rows + '</tbody><tfoot><tr><td colspan="3" style="padding:9px;font-weight:bold;border-top:2px solid #0f172a">Total Estimated Cost</td><td style="padding:9px;text-align:right;font-weight:bold;border-top:2px solid #0f172a">' + escHtml(formatMYR(totalCost)) + '</td></tr></tfoot></table><p style="font-size:12px;color:#64748b;margin-top:18px">This estimate is subject to final technical and commercial validation.</p></div>';
+
+    setEmailSendingRef(qi.ref);
+    try {
+      const headers = { 'Content-Type': 'application/json' };
+      if (emailSettings.apiKey.trim()) headers.Authorization = `Bearer ${emailSettings.apiKey.trim()}`;
+
+      const response = await fetch(emailSettings.apiEndpoint.trim(), {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          to: recipient,
+          subject,
+          text: textBody,
+          html: htmlBody,
+          fromName: emailSettings.senderName,
+          fromEmail: emailSettings.senderEmail,
+          quote: qi,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => '');
+        throw new Error(errorText || `Email API returned HTTP ${response.status}`);
+      }
+      alert(`Estimated cost ${qi.ref} was sent successfully to ${recipient}.`);
+    } catch (error) {
+      alert('Unable to send the email automatically. ' + (error?.message || 'Please verify the Email API settings and CORS configuration.'));
+    } finally {
+      setEmailSendingRef('');
+    }
   };
+
 
   // ─── EXCEL EXPORT ───────────────────────────────────────
   const exportQuoteToExcel = (qi) => {
@@ -1262,7 +1311,7 @@ export default function SIPPricingPlaybook() {
 
     const html = '<html><head><meta charset="utf-8" /></head><body>' +
       '<table border="1">' +
-      (watermark.enabled && watermark.excel ? '<tr><th colspan="5" style="font-size:26px;color:' + watermark.color + ';opacity:' + watermark.opacity + ';">' + esc(watermark.text) + '</th></tr>' : '') +
+      (watermark.enabled && watermark.excel ? '<tr style="height:90px"><th colspan="5" style="height:90px;font-size:' + (watermark.fontSize + 14) + 'px;font-weight:800;color:' + watermark.color + ';opacity:' + watermark.opacity + ';text-align:center;vertical-align:middle;mso-rotate:' + watermark.rotation + ';transform:rotate(' + watermark.rotation + 'deg);">' + esc(watermark.text) + '</th></tr>' : '') +
       '<tr><th colspan="5" style="font-size:16px;">SIP Services Estimated Cost</th></tr>' +
       '<tr><td><b>Reference</b></td><td colspan="4">' + esc(qi.ref) + '</td></tr>' +
       '<tr><td><b>Customer</b></td><td colspan="4">' + esc(qi.customer) + '</td></tr>' +
@@ -2480,8 +2529,8 @@ export default function SIPPricingPlaybook() {
                           <button onClick={() => exportQuoteToExcel(qi)} title="Export Excel" style={{ background: SURFACE, border: '1.5px solid ' + BORDER, borderRadius: 6, padding: '5px 7px', cursor: 'pointer', color: GREEN }}>
                             XLS
                           </button>
-                          <button onClick={() => emailEstimatedQuote(qi)} title="Email estimated cost" style={{ background: SURFACE, border: '1.5px solid ' + BORDER, borderRadius: 6, padding: '5px 7px', cursor: 'pointer', color: ACCENT }}>
-                            <Mail style={{ width: 13, height: 13 }} />
+                          <button disabled={emailSendingRef === qi.ref} onClick={() => emailEstimatedQuote(qi)} title="Send estimated cost automatically" style={{ background: SURFACE, border: '1.5px solid ' + BORDER, borderRadius: 6, padding: '5px 7px', cursor: emailSendingRef === qi.ref ? 'wait' : 'pointer', color: ACCENT, opacity: emailSendingRef === qi.ref ? 0.55 : 1 }}>
+                            {emailSendingRef === qi.ref ? <RefreshCw style={{ width: 13, height: 13 }} /> : <Mail style={{ width: 13, height: 13 }} />}
                           </button>
                           <button onClick={() => duplicateQuote(idx)} title="Duplicate" style={{ background: SURFACE, border: '1.5px solid ' + BORDER, borderRadius: 6, padding: '5px 7px', cursor: 'pointer', color: INK3 }}>
                             <Copy style={{ width: 13, height: 13 }} />
@@ -2723,6 +2772,29 @@ export default function SIPPricingPlaybook() {
                 ))}
               </div>
               <button onClick={() => setWatermark(DEFAULT_WATERMARK)} style={{ marginTop: 20, background: SURFACE, border: '1.5px solid ' + BORDER, borderRadius: 7, padding: '8px 12px', cursor: 'pointer', fontWeight: 600 }}>Reset Watermark</button>
+            </div>
+
+            <div style={{ background: SURFACE, border: '1px solid ' + BORDER, borderRadius: 10, padding: 20, maxWidth: 760, marginTop: 18 }}>
+              <h3 style={{ margin: '0 0 6px', fontSize: 18 }}>Automatic email settings</h3>
+              <p style={{ margin: '0 0 16px', fontSize: 12, color: INK3, lineHeight: 1.5 }}>The browser sends the estimated cost directly to your organisation's email API. No email application is opened. The API endpoint must accept a JSON POST request and handle mail delivery securely.</p>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+                <label style={{ fontSize: 12, fontWeight: 600, gridColumn: '1 / -1' }}>Email API endpoint
+                  <input placeholder="https://your-server.example.com/api/send-estimated-cost" value={emailSettings.apiEndpoint} onChange={e => setEmailSettings(p => ({ ...p, apiEndpoint: e.target.value }))} style={{ width: '100%', marginTop: 6, padding: 9, border: '1.5px solid ' + BORDER, borderRadius: 7, boxSizing: 'border-box' }} />
+                </label>
+                <label style={{ fontSize: 12, fontWeight: 600 }}>Sender name
+                  <input value={emailSettings.senderName} onChange={e => setEmailSettings(p => ({ ...p, senderName: e.target.value }))} style={{ width: '100%', marginTop: 6, padding: 9, border: '1.5px solid ' + BORDER, borderRadius: 7, boxSizing: 'border-box' }} />
+                </label>
+                <label style={{ fontSize: 12, fontWeight: 600 }}>Sender email
+                  <input type="email" placeholder="pricing@example.com" value={emailSettings.senderEmail} onChange={e => setEmailSettings(p => ({ ...p, senderEmail: e.target.value }))} style={{ width: '100%', marginTop: 6, padding: 9, border: '1.5px solid ' + BORDER, borderRadius: 7, boxSizing: 'border-box' }} />
+                </label>
+                <label style={{ fontSize: 12, fontWeight: 600, gridColumn: '1 / -1' }}>API bearer token (optional)
+                  <input type="password" value={emailSettings.apiKey} onChange={e => setEmailSettings(p => ({ ...p, apiKey: e.target.value }))} style={{ width: '100%', marginTop: 6, padding: 9, border: '1.5px solid ' + BORDER, borderRadius: 7, boxSizing: 'border-box' }} />
+                </label>
+              </div>
+              <div style={{ marginTop: 14, padding: 12, borderRadius: 8, background: AMBER + '10', border: '1px solid #FDE68A', fontSize: 11, color: INK2, lineHeight: 1.5 }}>
+                Do not place SMTP passwords or Microsoft 365 client secrets in this browser code. Keep those credentials on the server behind the API endpoint.
+              </div>
+              <button onClick={() => setEmailSettings(DEFAULT_EMAIL_SETTINGS)} style={{ marginTop: 16, background: SURFACE, border: '1.5px solid ' + BORDER, borderRadius: 7, padding: '8px 12px', cursor: 'pointer', fontWeight: 600 }}>Reset Email Settings</button>
             </div>
           </div>
         )}
