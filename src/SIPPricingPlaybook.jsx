@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import ExcelJS from 'exceljs';
 import { ChevronDown, ChevronRight, Plus, Trash2, Save, FileText, Settings, Calculator, Shield, Phone, Server, Globe, AlertTriangle, CheckCircle, Edit, X, Users, Lock, LogOut, Printer, Download, Upload, UserPlus, RefreshCw, Eye, Key, Copy, Search, ChevronLeft, Mail } from 'lucide-react';
 
 // ═══════════════════════════════════════════════════════════════
@@ -1297,60 +1298,256 @@ export default function SIPPricingPlaybook() {
   };
 
 
-  // ─── EXCEL EXPORT ───────────────────────────────────────
-  const exportQuoteToExcel = (qi) => {
-    const esc = (v) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    const totalCost = qi.lines.reduce((s, l) => s + l.internal + l.external, 0);
-    const sections = Array.from(new Set(qi.lines.map(l => l.section || 'Line Items')));
-    const lineRows = sections.map(section => {
-      const rows = qi.lines.filter(l => (l.section || 'Line Items') === section).map(l => (
-        '<tr>' +
-        '<td>' + esc(section) + '</td>' +
-        '<td>' + esc(l.label) + '</td>' +
-        '<td>' + esc(l.unit) + '</td>' +
-        '<td>' + l.qty + '</td>' +
-        '<td>' + (l.internal + l.external).toFixed(2) + '</td>' +
-        '</tr>'
-      )).join('');
-      return rows;
-    }).join('');
+  // ─── EXCEL EXPORT (.XLSX / EXCELJS) ─────────────────────
+  const exportQuoteToExcel = async (qi) => {
+    try {
+      const workbook = new ExcelJS.Workbook();
+      workbook.creator = 'SIP Pricing Playbook';
+      workbook.created = new Date();
+      workbook.modified = new Date();
 
-    // Excel HTML supports VML floating shapes. This creates a real overlay instead of
-    // placing the watermark inside a worksheet row. It displays best in desktop Excel.
-    const excelWatermark = watermark.enabled && watermark.excel ? (
-      '<div style="position:relative;height:1px;overflow:visible">' +
-      '<v:shape xmlns:v="urn:schemas-microsoft-com:vml" type="#_x0000_t202" ' +
-      'style="position:absolute;left:135pt;top:185pt;width:430pt;height:105pt;rotation:' + watermark.rotation + ';z-index:10;mso-position-horizontal-relative:page;mso-position-vertical-relative:page" ' +
-      'stroked="f" fillcolor="' + watermark.color + '" opacity="' + Math.max(0.05, Math.min(0.35, Number(watermark.opacity) || 0.1)) + '">' +
-      '<v:textbox inset="0,0,0,0"><div style="text-align:center;font-family:Arial,sans-serif;font-size:' + Math.max(42, Number(watermark.fontSize) || 72) + 'px;font-weight:800;letter-spacing:3px;color:' + watermark.color + ';white-space:nowrap;">' + esc(watermark.text) + '</div></v:textbox>' +
-      '</v:shape></div>'
-    ) : '';
+      const worksheet = workbook.addWorksheet('Estimated Cost', {
+        views: [{ showGridLines: false, state: 'frozen', ySplit: 8 }],
+        pageSetup: {
+          paperSize: 9,
+          orientation: 'portrait',
+          fitToPage: true,
+          fitToWidth: 1,
+          fitToHeight: 0,
+          margins: { left: 0.3, right: 0.3, top: 0.5, bottom: 0.5, header: 0.2, footer: 0.2 },
+        },
+      });
 
-    const html = '<html xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="utf-8" />' +
-      '<!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet><x:Name>Estimated Cost</x:Name><x:WorksheetOptions><x:DisplayGridlines/></x:WorksheetOptions></x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]-->' +
-      '</head><body>' + excelWatermark +
-      '<table border="1">' +
-      '<tr><th colspan="5" style="font-size:16px;">SIP Services Estimated Cost</th></tr>' +
-      '<tr><td><b>Reference</b></td><td colspan="4">' + esc(qi.ref) + '</td></tr>' +
-      '<tr><td><b>Customer</b></td><td colspan="4">' + esc(qi.customer) + '</td></tr>' +
-      '<tr><td><b>Scenario</b></td><td colspan="4">' + esc(qi.scenario) + '</td></tr>' +
-      '<tr><td><b>Date</b></td><td colspan="4">' + esc(qi.date) + '</td></tr>' +
-      '<tr><td><b>Validity</b></td><td colspan="4">' + esc(qi.validity) + ' days</td></tr>' +
-      '<tr></tr>' +
-      '<tr><th>Section</th><th>Item</th><th>Unit</th><th>Qty</th><th>Estimated Cost (RM)</th></tr>' +
-      lineRows +
-      '<tr></tr>' +
-      '<tr><td colspan="4"><b>Total Estimated Cost</b></td><td>' + totalCost.toFixed(2) + '</td></tr>' +
-      '</table></body></html>';
-    const blob = new Blob([html], { type: 'application/vnd.ms-excel' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = (qi.ref || 'quotation') + '.xls';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+      const toArgb = (hex, fallback = 'FF64748B') => {
+        const value = String(hex || '').replace('#', '').trim();
+        if (/^[0-9a-fA-F]{6}$/.test(value)) return 'FF' + value.toUpperCase();
+        if (/^[0-9a-fA-F]{8}$/.test(value)) return value.toUpperCase();
+        return fallback;
+      };
+
+      const safeFileName = (value) => String(value || 'estimated-cost')
+        .replace(/[\\/:*?"<>|]/g, '-')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      const moneyFormat = 'RM #,##0.00;[Red]-RM #,##0.00';
+      const thinBorder = {
+        top: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+        left: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+        bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+        right: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+      };
+
+      worksheet.columns = [
+        { key: 'section', width: 25 },
+        { key: 'item', width: 42 },
+        { key: 'unit', width: 24 },
+        { key: 'qty', width: 11 },
+        { key: 'cost', width: 22 },
+      ];
+
+      // Report heading
+      worksheet.mergeCells('A1:E1');
+      const titleCell = worksheet.getCell('A1');
+      titleCell.value = 'SIP Services Estimated Cost';
+      titleCell.font = { name: 'Arial', size: 20, bold: true, color: { argb: 'FF0F172A' } };
+      titleCell.alignment = { vertical: 'middle', horizontal: 'left' };
+      worksheet.getRow(1).height = 34;
+
+      worksheet.mergeCells('A2:E2');
+      worksheet.getCell('A2').value = 'CONFIDENTIAL · INTERNAL USE ONLY';
+      worksheet.getCell('A2').font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF64748B' } };
+
+      const details = [
+        ['Reference', qi.ref],
+        ['Customer', qi.customer],
+        ['Scenario', qi.scenario],
+        ['Date', qi.date],
+        ['Validity', `${qi.validity} days`],
+      ];
+      details.forEach(([label, value], index) => {
+        const rowNo = index + 3;
+        worksheet.getCell(rowNo, 1).value = label;
+        worksheet.getCell(rowNo, 1).font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF64748B' } };
+        worksheet.mergeCells(rowNo, 2, rowNo, 5);
+        worksheet.getCell(rowNo, 2).value = value || '';
+        worksheet.getCell(rowNo, 2).font = { name: 'Arial', size: 11, bold: index < 2, color: { argb: 'FF0F172A' } };
+        worksheet.getRow(rowNo).height = 21;
+      });
+
+      // Column header
+      const headerRowNo = 9;
+      const headerRow = worksheet.getRow(headerRowNo);
+      headerRow.values = ['Section', 'Item', 'Unit', 'Qty', 'Estimated Cost (RM)'];
+      headerRow.height = 25;
+      headerRow.eachCell(cell => {
+        cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F172A' } };
+        cell.alignment = { vertical: 'middle', horizontal: cell.col >= 4 ? 'center' : 'left' };
+        cell.border = thinBorder;
+      });
+
+      let currentRow = headerRowNo + 1;
+      const sections = Array.from(new Set(qi.lines.map(line => line.section || 'Line Items')));
+
+      sections.forEach(section => {
+        const sectionLines = qi.lines.filter(line => (line.section || 'Line Items') === section);
+        if (!sectionLines.length) return;
+
+        worksheet.mergeCells(currentRow, 1, currentRow, 5);
+        const sectionCell = worksheet.getCell(currentRow, 1);
+        sectionCell.value = section;
+        sectionCell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF334155' } };
+        sectionCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
+        sectionCell.alignment = { vertical: 'middle', horizontal: 'left' };
+        sectionCell.border = thinBorder;
+        worksheet.getRow(currentRow).height = 22;
+        currentRow += 1;
+
+        sectionLines.forEach(line => {
+          const row = worksheet.getRow(currentRow);
+          row.values = [
+            section,
+            line.label,
+            line.unit,
+            Number(line.qty) || 0,
+            (Number(line.internal) || 0) + (Number(line.external) || 0),
+          ];
+          row.height = 22;
+          row.eachCell((cell, colNumber) => {
+            cell.font = { name: 'Arial', size: 10, color: { argb: 'FF0F172A' } };
+            cell.alignment = {
+              vertical: 'middle',
+              horizontal: colNumber === 4 ? 'center' : colNumber === 5 ? 'right' : 'left',
+              wrapText: colNumber === 2 || colNumber === 3,
+            };
+            cell.border = thinBorder;
+          });
+          row.getCell(5).numFmt = moneyFormat;
+          currentRow += 1;
+        });
+
+        const subtotal = sectionLines.reduce(
+          (sum, line) => sum + (Number(line.internal) || 0) + (Number(line.external) || 0),
+          0
+        );
+        worksheet.mergeCells(currentRow, 1, currentRow, 4);
+        worksheet.getCell(currentRow, 1).value = `${section} Subtotal`;
+        worksheet.getCell(currentRow, 1).font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF334155' } };
+        worksheet.getCell(currentRow, 1).alignment = { horizontal: 'right', vertical: 'middle' };
+        worksheet.getCell(currentRow, 5).value = subtotal;
+        worksheet.getCell(currentRow, 5).numFmt = moneyFormat;
+        worksheet.getCell(currentRow, 5).font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF2563EB' } };
+        worksheet.getCell(currentRow, 5).alignment = { horizontal: 'right', vertical: 'middle' };
+        for (let col = 1; col <= 5; col += 1) worksheet.getCell(currentRow, col).border = thinBorder;
+        currentRow += 2;
+      });
+
+      const oneTimeCost = qi.lines
+        .filter(line => line.unit === 'one-time' || String(line.unit).includes('one-time'))
+        .reduce((sum, line) => sum + (Number(line.internal) || 0) + (Number(line.external) || 0), 0);
+      const recurringCost = qi.lines
+        .filter(line => line.unit !== 'one-time' && !String(line.unit).includes('one-time'))
+        .reduce((sum, line) => sum + (Number(line.internal) || 0) + (Number(line.external) || 0), 0);
+      const totalCost = oneTimeCost + recurringCost;
+
+      const summaryStart = currentRow;
+      const summaryRows = [
+        ['Non-Recurring Cost (One Time)', oneTimeCost],
+        ['Recurring Cost (Monthly Charges)', recurringCost],
+        ['First Month', totalCost],
+        ['Total Estimated Cost', totalCost],
+      ];
+      summaryRows.forEach(([label, value], index) => {
+        const rowNo = summaryStart + index;
+        worksheet.mergeCells(rowNo, 1, rowNo, 4);
+        worksheet.getCell(rowNo, 1).value = label;
+        worksheet.getCell(rowNo, 1).alignment = { horizontal: 'right', vertical: 'middle' };
+        worksheet.getCell(rowNo, 1).font = {
+          name: 'Arial', size: index === summaryRows.length - 1 ? 12 : 10, bold: true,
+          color: { argb: 'FF0F172A' },
+        };
+        worksheet.getCell(rowNo, 5).value = value;
+        worksheet.getCell(rowNo, 5).numFmt = moneyFormat;
+        worksheet.getCell(rowNo, 5).alignment = { horizontal: 'right', vertical: 'middle' };
+        worksheet.getCell(rowNo, 5).font = {
+          name: 'Arial', size: index === summaryRows.length - 1 ? 12 : 10, bold: true,
+          color: { argb: index === summaryRows.length - 1 ? 'FF2563EB' : 'FF0F172A' },
+        };
+        const fill = index === summaryRows.length - 1 ? 'FFEFF6FF' : 'FFF8FAFC';
+        for (let col = 1; col <= 5; col += 1) {
+          worksheet.getCell(rowNo, col).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: fill } };
+          worksheet.getCell(rowNo, col).border = thinBorder;
+        }
+        worksheet.getRow(rowNo).height = index === summaryRows.length - 1 ? 27 : 22;
+      });
+
+      const noteRow = summaryStart + summaryRows.length + 2;
+      worksheet.mergeCells(noteRow, 1, noteRow, 5);
+      worksheet.getCell(noteRow, 1).value = `This estimated cost is valid for ${qi.validity} days and is subject to final technical and commercial confirmation.`;
+      worksheet.getCell(noteRow, 1).font = { name: 'Arial', size: 9, italic: true, color: { argb: 'FF64748B' } };
+      worksheet.getCell(noteRow, 1).alignment = { wrapText: true, vertical: 'top' };
+      worksheet.getRow(noteRow).height = 32;
+
+      // Create a transparent PNG watermark and place it as one floating diagonal image.
+      // Unlike the previous HTML .xls method, this produces a real image in a real .xlsx workbook.
+      if (watermark.enabled && watermark.excel && String(watermark.text || '').trim()) {
+        const canvas = document.createElement('canvas');
+        canvas.width = 1400;
+        canvas.height = 520;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          ctx.save();
+          ctx.translate(canvas.width / 2, canvas.height / 2);
+          ctx.rotate((Number(watermark.rotation) || -30) * Math.PI / 180);
+          ctx.globalAlpha = Math.max(0.04, Math.min(0.22, Number(watermark.opacity) || 0.08));
+          ctx.fillStyle = watermark.color || '#CBD5E1';
+          ctx.font = `800 ${Math.max(54, Number(watermark.fontSize) || 72)}px Arial`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(String(watermark.text).trim(), 0, 0);
+          ctx.restore();
+
+          const watermarkImageId = workbook.addImage({
+            base64: canvas.toDataURL('image/png'),
+            extension: 'png',
+          });
+
+          const imageTopRow = 9;
+          const imageBottomRow = Math.max(imageTopRow + 14, noteRow - 1);
+          worksheet.addImage(watermarkImageId, {
+            tl: { col: 0.25, row: imageTopRow - 1 },
+            br: { col: 4.85, row: imageBottomRow },
+            editAs: 'oneCell',
+          });
+        }
+      }
+
+      worksheet.autoFilter = {
+        from: { row: headerRowNo, column: 1 },
+        to: { row: headerRowNo, column: 5 },
+      };
+      worksheet.headerFooter.oddFooter = '&LConfidential&CPage &P of &N&R' + (qi.ref || '');
+      worksheet.pageSetup.printArea = `A1:E${noteRow}`;
+      worksheet.pageSetup.printTitlesRow = `${headerRowNo}:${headerRowNo}`;
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `${safeFileName(qi.ref || 'estimated-cost')}.xlsx`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Excel export failed:', error);
+      alert('Unable to generate the Excel file. Please confirm that the exceljs package is installed.');
+    }
   };
 
   // ─── PDF EXPORT ─────────────────────────────────────────
