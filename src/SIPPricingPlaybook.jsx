@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import ExcelJS from 'exceljs';
 import { ChevronDown, ChevronRight, Plus, Trash2, Save, FileText, Settings, Calculator, Shield, Phone, Server, Globe, AlertTriangle, CheckCircle, Edit, X, Users, Lock, LogOut, Printer, Download, Upload, UserPlus, RefreshCw, Eye, Key, Copy, Search, ChevronLeft, Mail } from 'lucide-react';
 
 // ═══════════════════════════════════════════════════════════════
@@ -42,6 +41,39 @@ const DEFAULT_EMAIL_SETTINGS = {
 };
 
 const SI = ({ c: C, ...p }) => (C ? <C {...p} /> : null);
+
+// Load the browser build of ExcelJS only when the user exports an XLSX file.
+// This avoids a build-time dependency on the `exceljs` npm package.
+let excelJsLoadPromise = null;
+const loadExcelJS = () => {
+  if (typeof window === 'undefined') {
+    return Promise.reject(new Error('Excel export is available only in the browser.'));
+  }
+  if (window.ExcelJS) return Promise.resolve(window.ExcelJS);
+  if (excelJsLoadPromise) return excelJsLoadPromise;
+
+  excelJsLoadPromise = new Promise((resolve, reject) => {
+    const existing = document.querySelector('script[data-sip-exceljs="true"]');
+    if (existing) {
+      existing.addEventListener('load', () => window.ExcelJS ? resolve(window.ExcelJS) : reject(new Error('ExcelJS did not initialise.')), { once: true });
+      existing.addEventListener('error', () => reject(new Error('Unable to load ExcelJS.')), { once: true });
+      return;
+    }
+
+    const script = document.createElement('script');
+    script.src = 'https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js';
+    script.async = true;
+    script.dataset.sipExceljs = 'true';
+    script.onload = () => window.ExcelJS ? resolve(window.ExcelJS) : reject(new Error('ExcelJS did not initialise.'));
+    script.onerror = () => {
+      excelJsLoadPromise = null;
+      reject(new Error('Unable to download the Excel export library. Check the internet connection or Content Security Policy.'));
+    };
+    document.head.appendChild(script);
+  });
+
+  return excelJsLoadPromise;
+};
 
 // ═══════════════════════════════════════════════════════════════
 // DEFAULT COST DATABASE
@@ -1301,6 +1333,7 @@ export default function SIPPricingPlaybook() {
   // ─── EXCEL EXPORT (.XLSX / EXCELJS) ─────────────────────
   const exportQuoteToExcel = async (qi) => {
     try {
+      const ExcelJS = await loadExcelJS();
       const workbook = new ExcelJS.Workbook();
       workbook.creator = 'SIP Pricing Playbook';
       workbook.created = new Date();
@@ -1546,7 +1579,7 @@ export default function SIPPricingPlaybook() {
       URL.revokeObjectURL(url);
     } catch (error) {
       console.error('Excel export failed:', error);
-      alert('Unable to generate the Excel file. Please confirm that the exceljs package is installed.');
+      alert(error?.message || 'Unable to generate the Excel file.');
     }
   };
 
