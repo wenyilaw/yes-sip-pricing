@@ -1191,15 +1191,19 @@ export default function SIPPricingPlaybook() {
     setQuoteItems(prev => [...prev, { ...prev[idx], date: new Date().toLocaleString('en-MY', { timeZone: 'Asia/Kuala_Lumpur' }) }]);
   };
 
-  const getWatermarkOverlay = (enabled = true) => {
+  const getWatermarkOverlay = (enabled = true, mode = 'calculator') => {
     if (!watermark.enabled || !enabled || !watermark.text) return null;
 
-    // Reduced layout: only six watermarks across the full page (2 columns x 3 rows).
-    const positions = [
-      { left: '8%', top: '15%' }, { left: '56%', top: '15%' },
-      { left: '8%', top: '48%' }, { left: '56%', top: '48%' },
-      { left: '8%', top: '81%' }, { left: '56%', top: '81%' },
-    ];
+    // Keep the Estimated Cost page clean with one large centred watermark.
+    // The Sales Calculator uses only four marks so the page remains readable.
+    const positions = mode === 'estimatedCost'
+      ? [{ left: '20%', top: '42%', width: '60%' }]
+      : [
+          { left: '8%', top: '22%', width: '36%' },
+          { left: '56%', top: '22%', width: '36%' },
+          { left: '8%', top: '68%', width: '36%' },
+          { left: '56%', top: '68%', width: '36%' },
+        ];
 
     return (
       <div aria-hidden="true" style={{
@@ -1211,9 +1215,11 @@ export default function SIPPricingPlaybook() {
             position: 'absolute',
             left: position.left,
             top: position.top,
-            width: '36%',
+            width: position.width,
             textAlign: 'center',
-            fontSize: Math.max(26, Number(watermark.fontSize) * 0.65),
+            fontSize: mode === 'estimatedCost'
+              ? Math.max(42, Number(watermark.fontSize))
+              : Math.max(26, Number(watermark.fontSize) * 0.58),
             fontWeight: 800,
             letterSpacing: '0.08em',
             lineHeight: 1,
@@ -1309,9 +1315,21 @@ export default function SIPPricingPlaybook() {
       return rows;
     }).join('');
 
-    const html = '<html><head><meta charset="utf-8" /></head><body>' +
+    // Excel HTML supports VML floating shapes. This creates a real overlay instead of
+    // placing the watermark inside a worksheet row. It displays best in desktop Excel.
+    const excelWatermark = watermark.enabled && watermark.excel ? (
+      '<div style="position:relative;height:1px;overflow:visible">' +
+      '<v:shape xmlns:v="urn:schemas-microsoft-com:vml" type="#_x0000_t202" ' +
+      'style="position:absolute;left:135pt;top:185pt;width:430pt;height:105pt;rotation:' + watermark.rotation + ';z-index:10;mso-position-horizontal-relative:page;mso-position-vertical-relative:page" ' +
+      'stroked="f" fillcolor="' + watermark.color + '" opacity="' + Math.max(0.05, Math.min(0.35, Number(watermark.opacity) || 0.1)) + '">' +
+      '<v:textbox inset="0,0,0,0"><div style="text-align:center;font-family:Arial,sans-serif;font-size:' + Math.max(42, Number(watermark.fontSize) || 72) + 'px;font-weight:800;letter-spacing:3px;color:' + watermark.color + ';white-space:nowrap;">' + esc(watermark.text) + '</div></v:textbox>' +
+      '</v:shape></div>'
+    ) : '';
+
+    const html = '<html xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="utf-8" />' +
+      '<!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet><x:Name>Estimated Cost</x:Name><x:WorksheetOptions><x:DisplayGridlines/></x:WorksheetOptions></x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]-->' +
+      '</head><body>' + excelWatermark +
       '<table border="1">' +
-      (watermark.enabled && watermark.excel ? '<tr style="height:90px"><th colspan="5" style="height:90px;font-size:' + (watermark.fontSize + 14) + 'px;font-weight:800;color:' + watermark.color + ';opacity:' + watermark.opacity + ';text-align:center;vertical-align:middle;mso-rotate:' + watermark.rotation + ';transform:rotate(' + watermark.rotation + 'deg);">' + esc(watermark.text) + '</th></tr>' : '') +
       '<tr><th colspan="5" style="font-size:16px;">SIP Services Estimated Cost</th></tr>' +
       '<tr><td><b>Reference</b></td><td colspan="4">' + esc(qi.ref) + '</td></tr>' +
       '<tr><td><b>Customer</b></td><td colspan="4">' + esc(qi.customer) + '</td></tr>' +
@@ -1810,7 +1828,7 @@ export default function SIPPricingPlaybook() {
             ═══════════════════════════════════════════════════ */}
         {activeTab === 'sales' && (
           <div className="fade-in" style={{ position: 'relative' }}>
-            {getWatermarkOverlay(watermark.calculator)}
+            {getWatermarkOverlay(watermark.calculator, 'calculator')}
             <div style={{ position: 'relative', zIndex: 1 }}>
             <div style={{ borderBottom: '2px solid ' + INK, paddingBottom: 10, marginBottom: 20, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: 12 }}>
               <div>
@@ -2487,7 +2505,7 @@ export default function SIPPricingPlaybook() {
             ═══════════════════════════════════════════════════ */}
         {activeTab === 'quotes' && (
           <div className="fade-in" style={{ position: 'relative' }}>
-            {getWatermarkOverlay(watermark.estimatedCost)}
+            {getWatermarkOverlay(watermark.estimatedCost, 'estimatedCost')}
             <div style={{ position: 'relative', zIndex: 1 }}>
             <div style={{ borderBottom: '2px solid ' + INK, paddingBottom: 10, marginBottom: 20, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
               <div>
