@@ -2083,12 +2083,38 @@ export default function SIPPricingPlaybook() {
             <div style={{ position: 'relative', zIndex: 1 }}>
             <div style={{ borderBottom: '2px solid ' + INK, paddingBottom: 10, marginBottom: 20, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: 12 }}>
               <div>
-                <p style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: ACCENT, letterSpacing: '0.1em', textTransform: 'uppercase', fontWeight: 600, margin: 0 }}>01 / Scenario Selector</p>
-                <h2 style={{ fontWeight: 800, fontSize: 30, color: INK, letterSpacing: '-0.025em', lineHeight: 1.05, margin: '6px 0 0' }}>Pick a deployment scenario</h2>
+                <p style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: ACCENT, letterSpacing: '0.1em', textTransform: 'uppercase', fontWeight: 600, margin: 0 }}>
+                  {currentUser.role === 'sales' ? '02 / Recommended Solution' : '01 / Scenario Selector'}
+                </p>
+                <h2 style={{ fontWeight: 800, fontSize: 30, color: INK, letterSpacing: '-0.025em', lineHeight: 1.05, margin: '6px 0 0' }}>
+                  {currentUser.role === 'sales' ? 'System-recommended deployment' : 'Pick a deployment scenario'}
+                </h2>
               </div>
-              <p style={{ fontSize: 13, color: INK3, maxWidth: 300, textAlign: 'right', lineHeight: 1.55, margin: 0 }}>Select the scenario, enter quantities, set margin, then save to quote.</p>
+              <p style={{ fontSize: 13, color: INK3, maxWidth: 340, textAlign: 'right', lineHeight: 1.55, margin: 0 }}>
+                {currentUser.role === 'sales'
+                  ? 'The deployment is selected automatically from the completed Pre-Requisite Checklist.'
+                  : 'Select the scenario, enter quantities, set margin, then save to quote.'}
+              </p>
             </div>
 
+            {currentUser.role === 'sales' && scenarioObj && (
+              <div style={{ background: scenarioObj.colorSoft || ACCENT_SOFT, border: '2px solid ' + (scenarioObj.color || ACCENT), borderRadius: 12, padding: '16px 18px', marginBottom: 18, boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+                  <div style={{ width: 36, height: 36, borderRadius: 9, background: scenarioObj.color || ACCENT, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <SI c={getScenarioIcon(scenarioObj)} style={{ width: 18, height: 18, color: SURFACE }} />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <p style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase', color: scenarioObj.color || ACCENT, margin: '0 0 5px' }}>Auto-selected from checklist</p>
+                    <h3 style={{ fontSize: 19, fontWeight: 900, color: INK, margin: 0 }}>{scenarioObj.name}</h3>
+                    {scenarioObj.desc && <p style={{ fontSize: 12, color: INK3, lineHeight: 1.55, margin: '7px 0 0' }}>{scenarioObj.desc}</p>}
+                    <p style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: INK3, letterSpacing: '0.06em', textTransform: 'uppercase', margin: '8px 0 0' }}>{scenarioObj.items.length} line items</p>
+                  </div>
+                  <CheckCircle style={{ width: 21, height: 21, color: GREEN, flexShrink: 0 }} />
+                </div>
+              </div>
+            )}
+
+            {currentUser.role !== 'sales' && (<>
             {/* Scenario cards grouped by section */}
             {scenarioSections.map(section => {
               const sectionScenarios = scenarios.filter(sc => (sc.scenarioType || 'certified') === section.id);
@@ -2184,13 +2210,15 @@ export default function SIPPricingPlaybook() {
               </div>
             )}
 
-            {/* Step 3: Pre-Requisite Summary — after Scenario Selection, before Line Items */}
+            </>)}
+
+            {/* Step 3: Pre-Requisite Summary — after the recommended solution, before Line Items */}
             {getReadinessSummary().length > 0 && (
               <div style={{ background: SURFACE, border: '1px solid ' + BORDER, borderRadius: 10, padding: '14px 16px', marginBottom: 18, boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 10 }}>
                   <div>
                     <p style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: ACCENT, margin: 0 }}>Pre-Requisite Checklist Summary</p>
-                    <p style={{ fontSize: 12, color: INK3, margin: '4px 0 0' }}>Selections used to recommend this deployment scenario.</p>
+                    <p style={{ fontSize: 12, color: INK3, margin: '4px 0 0' }}>Selections used to determine the recommended deployment solution.</p>
                   </div>
                   <button onClick={() => setActiveTab('readiness')} style={{ background: SURFACE, color: ACCENT, border: '1.5px solid ' + ACCENT + '55', borderRadius: 7, padding: '6px 10px', cursor: 'pointer', fontWeight: 700, fontSize: 11 }}>Review Checklist</button>
                 </div>
@@ -2204,7 +2232,7 @@ export default function SIPPricingPlaybook() {
                 </div>
                 {(readinessScenario?.name || readinessResult.scenarioLabel) && (
                   <div style={{ marginTop: 9, paddingTop: 9, borderTop: '1px solid ' + BORDER, fontSize: 12, color: INK2 }}>
-                    <strong>Recommended scenario:</strong> {readinessScenario?.name || readinessResult.scenarioLabel}
+                    <strong>Recommended solution:</strong> {readinessScenario?.name || readinessResult.scenarioLabel}
                   </div>
                 )}
               </div>
