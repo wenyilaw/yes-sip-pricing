@@ -2089,31 +2089,6 @@ export default function SIPPricingPlaybook() {
               <p style={{ fontSize: 13, color: INK3, maxWidth: 300, textAlign: 'right', lineHeight: 1.55, margin: 0 }}>Select the scenario, enter quantities, set margin, then save to quote.</p>
             </div>
 
-            {getReadinessSummary().length > 0 && (
-              <div style={{ background: SURFACE, border: '1px solid ' + BORDER, borderRadius: 10, padding: '14px 16px', marginBottom: 18, boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-                  <div>
-                    <p style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: ACCENT, margin: 0 }}>Pre-Requisite Checklist Summary</p>
-                    <p style={{ fontSize: 12, color: INK3, margin: '4px 0 0' }}>Selections used to recommend this deployment scenario.</p>
-                  </div>
-                  <button onClick={() => setActiveTab('readiness')} style={{ background: SURFACE, color: ACCENT, border: '1.5px solid ' + ACCENT + '55', borderRadius: 7, padding: '6px 10px', cursor: 'pointer', fontWeight: 700, fontSize: 11 }}>Review Checklist</button>
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 8 }}>
-                  {getReadinessSummary().map(item => (
-                    <div key={item.questionId} style={{ background: BG, border: '1px solid ' + BORDER, borderRadius: 8, padding: '9px 11px' }}>
-                      <p style={{ fontSize: 10, color: INK3, fontWeight: 700, margin: 0 }}>{item.question}</p>
-                      <p style={{ fontSize: 12, color: INK, fontWeight: 800, margin: '4px 0 0' }}>{item.answer}</p>
-                    </div>
-                  ))}
-                </div>
-                {(readinessScenario?.name || readinessResult.scenarioLabel) && (
-                  <div style={{ marginTop: 9, paddingTop: 9, borderTop: '1px solid ' + BORDER, fontSize: 12, color: INK2 }}>
-                    <strong>Recommended scenario:</strong> {readinessScenario?.name || readinessResult.scenarioLabel}
-                  </div>
-                )}
-              </div>
-            )}
-
             {/* Scenario cards grouped by section */}
             {scenarioSections.map(section => {
               const sectionScenarios = scenarios.filter(sc => (sc.scenarioType || 'certified') === section.id);
@@ -2206,6 +2181,32 @@ export default function SIPPricingPlaybook() {
                     </div>
                   </div>
                 ))}
+              </div>
+            )}
+
+            {/* Step 3: Pre-Requisite Summary — after Scenario Selection, before Line Items */}
+            {getReadinessSummary().length > 0 && (
+              <div style={{ background: SURFACE, border: '1px solid ' + BORDER, borderRadius: 10, padding: '14px 16px', marginBottom: 18, boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+                  <div>
+                    <p style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: ACCENT, margin: 0 }}>Pre-Requisite Checklist Summary</p>
+                    <p style={{ fontSize: 12, color: INK3, margin: '4px 0 0' }}>Selections used to recommend this deployment scenario.</p>
+                  </div>
+                  <button onClick={() => setActiveTab('readiness')} style={{ background: SURFACE, color: ACCENT, border: '1.5px solid ' + ACCENT + '55', borderRadius: 7, padding: '6px 10px', cursor: 'pointer', fontWeight: 700, fontSize: 11 }}>Review Checklist</button>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 8 }}>
+                  {getReadinessSummary().map(item => (
+                    <div key={item.questionId} style={{ background: BG, border: '1px solid ' + BORDER, borderRadius: 8, padding: '9px 11px' }}>
+                      <p style={{ fontSize: 10, color: INK3, fontWeight: 700, margin: 0 }}>{item.question}</p>
+                      <p style={{ fontSize: 12, color: INK, fontWeight: 800, margin: '4px 0 0' }}>{item.answer}</p>
+                    </div>
+                  ))}
+                </div>
+                {(readinessScenario?.name || readinessResult.scenarioLabel) && (
+                  <div style={{ marginTop: 9, paddingTop: 9, borderTop: '1px solid ' + BORDER, fontSize: 12, color: INK2 }}>
+                    <strong>Recommended scenario:</strong> {readinessScenario?.name || readinessResult.scenarioLabel}
+                  </div>
+                )}
               </div>
             )}
 
