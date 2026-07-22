@@ -33,6 +33,8 @@ const DEFAULT_WATERMARK = {
 };
 
 
+const ENABLE_EMAIL_BUTTON = false;
+
 const DEFAULT_EMAIL_SETTINGS = {
   apiEndpoint: '',
   apiKey: '',
@@ -1197,6 +1199,23 @@ export default function SIPPricingPlaybook() {
   const breakdown = calcBreakdown();
 
   // ─── QUOTE FUNCTIONS ────────────────────────────────────
+  const getReadinessSummary = () => {
+    const path = getWizardPath(readiness).path || [];
+    return path
+      .map(question => {
+        const selectedValue = readiness[question.id];
+        if (!selectedValue) return null;
+        const selectedOption = (question.options || []).find(option => option.value === selectedValue);
+        return {
+          questionId: question.id,
+          question: question.label,
+          answerValue: selectedValue,
+          answer: selectedOption?.label || selectedValue,
+        };
+      })
+      .filter(Boolean);
+  };
+
   const addToQuote = () => {
     const items = getActiveItems();
     const lines = items.map(dotPath => {
@@ -1211,6 +1230,8 @@ export default function SIPPricingPlaybook() {
       scenario: isCustomScenario ? 'Custom Selection' : [scenarioObj?.name || 'Custom', ...selectedAddOnScenarios.map(sc => sc.name)].join(' + '),
       lines, marginPct, date: new Date().toLocaleString('en-MY', { timeZone: 'Asia/Kuala_Lumpur' }),
       customer: customerName || 'Not specified', ref, validity: quoteValidity,
+      readinessSummary: getReadinessSummary(),
+      readinessScenario: readinessScenario?.name || readinessResult.scenarioLabel || '',
     }]);
     setCustomerName('');
     setQuoteRef('');
@@ -2068,6 +2089,31 @@ export default function SIPPricingPlaybook() {
               <p style={{ fontSize: 13, color: INK3, maxWidth: 300, textAlign: 'right', lineHeight: 1.55, margin: 0 }}>Select the scenario, enter quantities, set margin, then save to quote.</p>
             </div>
 
+            {getReadinessSummary().length > 0 && (
+              <div style={{ background: SURFACE, border: '1px solid ' + BORDER, borderRadius: 10, padding: '14px 16px', marginBottom: 18, boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+                  <div>
+                    <p style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: ACCENT, margin: 0 }}>Pre-Requisite Checklist Summary</p>
+                    <p style={{ fontSize: 12, color: INK3, margin: '4px 0 0' }}>Selections used to recommend this deployment scenario.</p>
+                  </div>
+                  <button onClick={() => setActiveTab('readiness')} style={{ background: SURFACE, color: ACCENT, border: '1.5px solid ' + ACCENT + '55', borderRadius: 7, padding: '6px 10px', cursor: 'pointer', fontWeight: 700, fontSize: 11 }}>Review Checklist</button>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 8 }}>
+                  {getReadinessSummary().map(item => (
+                    <div key={item.questionId} style={{ background: BG, border: '1px solid ' + BORDER, borderRadius: 8, padding: '9px 11px' }}>
+                      <p style={{ fontSize: 10, color: INK3, fontWeight: 700, margin: 0 }}>{item.question}</p>
+                      <p style={{ fontSize: 12, color: INK, fontWeight: 800, margin: '4px 0 0' }}>{item.answer}</p>
+                    </div>
+                  ))}
+                </div>
+                {(readinessScenario?.name || readinessResult.scenarioLabel) && (
+                  <div style={{ marginTop: 9, paddingTop: 9, borderTop: '1px solid ' + BORDER, fontSize: 12, color: INK2 }}>
+                    <strong>Recommended scenario:</strong> {readinessScenario?.name || readinessResult.scenarioLabel}
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Scenario cards grouped by section */}
             {scenarioSections.map(section => {
               const sectionScenarios = scenarios.filter(sc => (sc.scenarioType || 'certified') === section.id);
@@ -2777,9 +2823,11 @@ export default function SIPPricingPlaybook() {
                           <button onClick={() => exportQuoteToExcel(qi)} title="Export Excel" style={{ background: SURFACE, border: '1.5px solid ' + BORDER, borderRadius: 6, padding: '5px 7px', cursor: 'pointer', color: GREEN }}>
                             XLS
                           </button>
-                          <button disabled={emailSendingRef === qi.ref} onClick={() => emailEstimatedQuote(qi)} title="Send estimated cost automatically" style={{ background: SURFACE, border: '1.5px solid ' + BORDER, borderRadius: 6, padding: '5px 7px', cursor: emailSendingRef === qi.ref ? 'wait' : 'pointer', color: ACCENT, opacity: emailSendingRef === qi.ref ? 0.55 : 1 }}>
-                            {emailSendingRef === qi.ref ? <RefreshCw style={{ width: 13, height: 13 }} /> : <Mail style={{ width: 13, height: 13 }} />}
-                          </button>
+                          {ENABLE_EMAIL_BUTTON && (
+                            <button disabled={emailSendingRef === qi.ref} onClick={() => emailEstimatedQuote(qi)} title="Send estimated cost automatically" style={{ background: SURFACE, border: '1.5px solid ' + BORDER, borderRadius: 6, padding: '5px 7px', cursor: emailSendingRef === qi.ref ? 'wait' : 'pointer', color: ACCENT, opacity: emailSendingRef === qi.ref ? 0.55 : 1 }}>
+                              {emailSendingRef === qi.ref ? <RefreshCw style={{ width: 13, height: 13 }} /> : <Mail style={{ width: 13, height: 13 }} />}
+                            </button>
+                          )}
                           <button onClick={() => duplicateQuote(idx)} title="Duplicate" style={{ background: SURFACE, border: '1.5px solid ' + BORDER, borderRadius: 6, padding: '5px 7px', cursor: 'pointer', color: INK3 }}>
                             <Copy style={{ width: 13, height: 13 }} />
                           </button>
@@ -2788,6 +2836,20 @@ export default function SIPPricingPlaybook() {
                           </button>
                         </div>
                       </div>
+                      {Array.isArray(qi.readinessSummary) && qi.readinessSummary.length > 0 && (
+                        <div style={{ padding: '12px 18px', borderBottom: '1px solid ' + BORDER, background: '#FBFDFF' }}>
+                          <p style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase', color: ACCENT, margin: '0 0 8px' }}>Pre-Requisite Checklist Summary</p>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 7 }}>
+                            {qi.readinessSummary.map((item, summaryIndex) => (
+                              <div key={(item.questionId || summaryIndex) + '-' + summaryIndex} style={{ background: SURFACE, border: '1px solid ' + BORDER, borderRadius: 7, padding: '8px 10px' }}>
+                                <p style={{ fontSize: 9, color: INK3, fontWeight: 700, margin: 0 }}>{item.question}</p>
+                                <p style={{ fontSize: 11, color: INK, fontWeight: 800, margin: '3px 0 0' }}>{item.answer}</p>
+                              </div>
+                            ))}
+                          </div>
+                          {qi.readinessScenario && <p style={{ fontSize: 11, color: INK2, margin: '8px 0 0' }}><strong>Recommended scenario:</strong> {qi.readinessScenario}</p>}
+                        </div>
+                      )}
                       <div style={{ padding: '0 18px' }}>
                         <div style={{ display: 'grid', gridTemplateColumns: '110px 2fr 50px 100px', padding: '5px 0', borderBottom: '1px solid ' + BORDER, fontFamily: "'JetBrains Mono', monospace", fontSize: 9, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: INK3 }}>
                           <span>Section</span><span>Item</span><span style={{ textAlign: 'center' }}>Qty</span><span style={{ textAlign: 'right' }}>Estimated Cost</span>
